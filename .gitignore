@@ -1,0 +1,12 @@
+# OS
+.DS_Store
+
+# ローカル環境変数(APIキーはコミットしない)
+.env
+.env.local
+.env*.local
+
+# Claude Code のローカル設定(権限グラントなど個人環境固有)
+.claude/settings.local.json
+
+# app/ 以下のビルド成果物・依存は app/.gitignore で管理
