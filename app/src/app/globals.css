@@ -1,0 +1,211 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #12100e;
+  --bg-panel: #1c1917;
+  --bg-card: #262220;
+  --line: #3a3431;
+  --fg: #f5f0ea;
+  --fg-dim: #a89f96;
+  --accent: #e0492e; /* 朱色 — 判子の赤 */
+  --accent-soft: rgba(224, 73, 46, 0.14);
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --ink: #1e3a8a; /* 手書きのインク */
+  --paper: #fdfcf7;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--bg-panel);
+  --color-card: var(--bg-card);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-dim: var(--fg-dim);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family:
+    var(--font-geist-sans),
+    "Hiragino Kaku Gothic ProN",
+    "Hiragino Sans",
+    "Yu Gothic",
+    "Noto Sans JP",
+    sans-serif;
+}
+
+/* ============ 紙 ============ */
+
+.paper {
+  position: relative;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(0, 0, 0, 0.025), transparent 60%),
+    var(--paper);
+  aspect-ratio: 210 / 297;
+  container-type: inline-size;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 12px 40px rgba(0, 0, 0, 0.45);
+  border-radius: 2px;
+  overflow: hidden;
+  user-select: none;
+}
+
+.paper-el {
+  position: absolute;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.paper-printed {
+  color: #2b2b2b;
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+}
+
+.paper-hand {
+  color: var(--ink);
+  font-family: "Hiragino Maru Gothic ProN", "Yu Gothic", sans-serif;
+  font-weight: 500;
+}
+
+.paper-line {
+  background: #444;
+}
+
+.paper-box {
+  border: 0.16cqw solid #555;
+}
+
+.paper-stamp {
+  border: 0.4cqw solid rgba(200, 40, 30, 0.75);
+  border-radius: 50%;
+  color: rgba(200, 40, 30, 0.8);
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-6deg);
+}
+
+.paper-circle {
+  border: 0.35cqw solid rgba(30, 58, 138, 0.75);
+  border-radius: 50%;
+}
+
+/* 出典ハイライト */
+.source-highlight {
+  position: absolute;
+  border: 2px solid var(--accent);
+  background: rgba(224, 73, 46, 0.16);
+  border-radius: 4px;
+  pointer-events: none;
+  animation: highlight-pulse 1.2s ease-in-out infinite;
+  z-index: 5;
+}
+
+@keyframes highlight-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 73, 46, 0.45); }
+  50% { box-shadow: 0 0 0 6px rgba(224, 73, 46, 0); }
+}
+
+/* スキャンライン */
+.scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 18%;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(224, 73, 46, 0.1) 40%,
+    rgba(224, 73, 46, 0.35) 50%,
+    rgba(224, 73, 46, 0.1) 60%,
+    transparent
+  );
+  border-bottom: 2px solid rgba(224, 73, 46, 0.7);
+  animation: scan 2.4s ease-in-out infinite;
+  z-index: 4;
+  pointer-events: none;
+}
+
+@keyframes scan {
+  0% { top: -18%; }
+  100% { top: 100%; }
+}
+
+/* ============ ビルドアニメーション ============ */
+
+.field-in {
+  animation: field-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+@keyframes field-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.blink-cursor::after {
+  content: "▊";
+  color: var(--accent);
+  animation: blink 0.9s step-start infinite;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.spin-slow {
+  animation: spin 1.1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============ 汎用 ============ */
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.confidence-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.confidence-bar > div {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
