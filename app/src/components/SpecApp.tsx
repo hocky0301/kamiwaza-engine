@@ -255,10 +255,14 @@ function Chart({ spec, records }: { spec: AppSpec; records: AppRecord[] }) {
     (f) => f.type === "select" && spec.listColumns.includes(f.id),
   );
   const first = records[0];
-  const filtered =
+  // 同一エンティティ(例: 同じ設備)の推移として意味を持つだけの件数が残る場合のみ絞り込む。
+  // ステータス系のselect(絞ると1〜2件になる)では全件表示にフォールバックする
+  const sameDim =
     dimField && first
       ? records.filter((r) => r[dimField.id] === first[dimField.id])
       : records;
+  const useDim = dimField && first && sameDim.length >= 3;
+  const filtered = useDim ? sameDim : records;
 
   const sorted = useMemo(() => {
     if (!dateField) return [...filtered].reverse();
@@ -274,7 +278,7 @@ function Chart({ spec, records }: { spec: AppSpec; records: AppRecord[] }) {
   );
   const max = Math.max(...values, 1);
   const title = numField
-    ? `${dimField && first ? `${first[dimField.id]} — ` : ""}${numField.label}の推移`
+    ? `${useDim ? `${String(first[dimField.id])} — ` : ""}${numField.label}の推移`
     : "登録件数の推移";
 
   const W = 420;

@@ -19,6 +19,8 @@ export interface PaperElement {
   align?: "left" | "center" | "right";
   rotate?: number;
   bold?: boolean;
+  /** stamp用: 角印・ゴム印(true)か丸印(false/省略)か */
+  square?: boolean;
 }
 
 export interface Scenario {
@@ -35,6 +37,8 @@ export interface Scenario {
   alert: string;
   /** 信頼度が低い項目への逆質問(なければnull) */
   question: { fieldId: string; question: string; choices: string[] } | null;
+  /** レコード登録前に流す検算結果メッセージ(なければ省略) */
+  validationNote?: string;
 }
 
 /* ============================================================
@@ -349,10 +353,196 @@ const tenkenSeeds: AppRecord[] = [
 ];
 
 /* ============================================================
+ * シナリオ4: 月締め請求明細書
+ * 実在の化学品商社26年分・14,608件の書類アーカイブ分析から抽出した
+ * 「国産販売管理ソフト典型様式(繰越サマリー帯つき)」に準拠。
+ * 手書きゼロの印字帳票+赤ゴム印という、実際に最も多いパターン。
+ * ============================================================ */
+
+const seikyuPaper: PaperElement[] = [
+  // タイトル(枠囲み)
+  { kind: "box", x: 30, y: 2.5, w: 32, h: 5.5 },
+  { kind: "printed", x: 30, y: 3.8, w: 32, h: 3.2, text: "請 求 明 細 書", size: 2.9, align: "center", bold: true },
+  // 右上: PAGE / 請求No / 締切分
+  { kind: "printed", x: 82, y: 2.2, w: 14, h: 2.2, text: "PAGE  1", size: 1.6, align: "right" },
+  { fieldId: "billing_no", kind: "printed", x: 70, y: 4.6, w: 26, h: 2.4, text: "請求No. 00000743", size: 1.8, align: "right" },
+  { fieldId: "closing_date", kind: "printed", x: 66, y: 7.2, w: 30, h: 2.4, text: "2026年 7月31日 締切分", size: 1.9, align: "right" },
+  // 宛先ブロック(左)
+  { kind: "printed", x: 5, y: 12, w: 30, h: 2.2, text: "〒000-0004", size: 1.8 },
+  { kind: "printed", x: 5, y: 14.4, w: 42, h: 2.2, text: "埼玉県架空市機屋3-9-2", size: 1.8 },
+  { fieldId: "customer", kind: "printed", x: 5, y: 17.4, w: 44, h: 3.2, text: "オルカ精密工業株式会社  御中", size: 2.5, bold: true },
+  { kind: "printed", x: 5, y: 20.8, w: 20, h: 2.2, text: "(0105)", size: 1.8 },
+  { kind: "line", x: 5, y: 20.4, w: 44, h: 0.15 },
+  // 発行元ブロック(右)+ 赤角印
+  { fieldId: "issuer", kind: "printed", x: 60, y: 11.5, w: 30, h: 2.8, text: "シャチホコ鋼材株式会社", size: 2.2, bold: true },
+  { kind: "stamp", x: 86, y: 10.6, w: 6, h: 4.5, text: "北関東", size: 1.5, square: true },
+  { kind: "printed", x: 60, y: 14.6, w: 36, h: 2, text: "〒000-0001 東京都架空区海風1-2-3", size: 1.5 },
+  { kind: "printed", x: 60, y: 16.6, w: 36, h: 2, text: "TEL: 030-5550-0177  FAX: 030-5550-0178", size: 1.5 },
+  { kind: "printed", x: 60, y: 18.6, w: 36, h: 2, text: "取引銀行: カモメ銀行 みなと支店 当座 0098765", size: 1.5 },
+  { fieldId: "reg_no", kind: "printed", x: 60, y: 20.6, w: 36, h: 2, text: "登録番号: T1234567890123", size: 1.6 },
+  // 検印枠 + 担当者丸印
+  { kind: "box", x: 84, y: 23.5, w: 12, h: 8 },
+  { kind: "printed", x: 84, y: 24, w: 12, h: 1.8, text: "検印", size: 1.4, align: "center" },
+  { kind: "stamp", x: 87.2, y: 26.2, w: 5.6, h: 4.4, text: "山口", size: 1.6 },
+  // 経理の赤ゴム印「入力済」+ 手書き日付(消込の実務)
+  { fieldId: "status", kind: "stamp", x: 7, y: 23.8, w: 13, h: 4.8, text: "入 力 済", size: 1.9, square: true, rotate: -2 },
+  { fieldId: "status", kind: "hand", x: 21.5, y: 24.6, w: 8, h: 3, text: "7/3", size: 2.1, rotate: -1 },
+  // 繰越サマリー帯(この様式の看板)
+  { kind: "box", x: 4, y: 31, w: 92, h: 6.5 },
+  { kind: "line", x: 19.33, y: 31, w: 0.15, h: 6.5 },
+  { kind: "line", x: 34.67, y: 31, w: 0.15, h: 6.5 },
+  { kind: "line", x: 50, y: 31, w: 0.15, h: 6.5 },
+  { kind: "line", x: 65.33, y: 31, w: 0.15, h: 6.5 },
+  { kind: "line", x: 80.67, y: 31, w: 0.15, h: 6.5 },
+  { kind: "printed", x: 4, y: 31.7, w: 15.3, h: 1.8, text: "前回御請求額", size: 1.4, align: "center" },
+  { kind: "printed", x: 19.33, y: 31.7, w: 15.3, h: 1.8, text: "御入金額", size: 1.4, align: "center" },
+  { kind: "printed", x: 34.67, y: 31.7, w: 15.3, h: 1.8, text: "繰越金額", size: 1.4, align: "center" },
+  { kind: "printed", x: 50, y: 31.7, w: 15.3, h: 1.8, text: "今回御買上額", size: 1.4, align: "center" },
+  { kind: "printed", x: 65.33, y: 31.7, w: 15.3, h: 1.8, text: "消費税", size: 1.4, align: "center" },
+  { kind: "printed", x: 80.67, y: 31.7, w: 15.3, h: 1.8, text: "今回御請求額", size: 1.4, align: "center" },
+  { fieldId: "prev_amount", kind: "printed", x: 5, y: 34.2, w: 13.3, h: 2.4, text: "214,500", size: 1.9, align: "right" },
+  { fieldId: "payment", kind: "printed", x: 20.33, y: 34.2, w: 13.3, h: 2.4, text: "214,500", size: 1.9, align: "right" },
+  { fieldId: "carryover", kind: "printed", x: 35.67, y: 34.2, w: 13.3, h: 2.4, text: "0", size: 1.9, align: "right" },
+  { fieldId: "purchase", kind: "printed", x: 51, y: 34.2, w: 13.3, h: 2.4, text: "152,000", size: 1.9, align: "right" },
+  { fieldId: "tax", kind: "printed", x: 66.33, y: 34.2, w: 13.3, h: 2.4, text: "15,200", size: 1.9, align: "right" },
+  { fieldId: "billed", kind: "printed", x: 81.67, y: 34.2, w: 13.3, h: 2.4, text: "167,200", size: 1.9, align: "right", bold: true },
+  // 明細テーブル(空行にも罫線=固定行数様式)
+  { kind: "box", x: 4, y: 40, w: 92, h: 43 },
+  { kind: "line", x: 17, y: 40, w: 0.15, h: 43 },
+  { kind: "line", x: 57, y: 40, w: 0.15, h: 43 },
+  { kind: "line", x: 68, y: 40, w: 0.15, h: 43 },
+  { kind: "line", x: 75, y: 40, w: 0.15, h: 43 },
+  { kind: "line", x: 84, y: 40, w: 0.15, h: 43 },
+  { kind: "line", x: 4, y: 43.5, w: 92, h: 0.15 },
+  { kind: "printed", x: 4, y: 40.8, w: 13, h: 1.8, text: "日付 / 伝票No", size: 1.3, align: "center" },
+  { kind: "printed", x: 17, y: 40.8, w: 40, h: 1.8, text: "商品コード ・ 商 品 名", size: 1.4, align: "center" },
+  { kind: "printed", x: 57, y: 40.8, w: 11, h: 1.8, text: "数量", size: 1.4, align: "center" },
+  { kind: "printed", x: 68, y: 40.8, w: 7, h: 1.8, text: "単位", size: 1.4, align: "center" },
+  { kind: "printed", x: 75, y: 40.8, w: 9, h: 1.8, text: "単価", size: 1.4, align: "center" },
+  { kind: "printed", x: 84, y: 40.8, w: 12, h: 1.8, text: "金額", size: 1.4, align: "center" },
+  // 行罫線(空行にも印字される固定様式)
+  { kind: "line", x: 4, y: 47.9, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 52.3, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 56.7, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 61.1, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 65.5, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 69.9, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 74.3, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 78.7, w: 92, h: 0.12 },
+  // 明細行1: OPPフィルム
+  { fieldId: "items", kind: "printed", x: 4.5, y: 44.6, w: 12.5, h: 2, text: "7/08  4211", size: 1.4 },
+  { fieldId: "items", kind: "printed", x: 18, y: 44.6, w: 38, h: 2, text: "[1023] OPPフィルム #40", size: 1.6 },
+  { fieldId: "items", kind: "printed", x: 57, y: 44.6, w: 10, h: 2, text: "500", size: 1.6, align: "right" },
+  { fieldId: "items", kind: "printed", x: 68.5, y: 44.6, w: 6, h: 2, text: "kg", size: 1.5, align: "center" },
+  { fieldId: "items", kind: "printed", x: 75, y: 44.6, w: 8.5, h: 2, text: "120", size: 1.6, align: "right" },
+  { fieldId: "items", kind: "printed", x: 84, y: 44.6, w: 11, h: 2, text: "60,000", size: 1.6, align: "right" },
+  //   規格サブ行(2行使い様式)
+  { fieldId: "items", kind: "printed", x: 18, y: 49, w: 38, h: 2, text: "  規格: 2軸延伸PP 40μ-720幅", size: 1.4 },
+  { fieldId: "items", kind: "printed", x: 84, y: 49, w: 11, h: 2, text: "0", size: 1.5, align: "right" },
+  // 明細行2: PETフィルム
+  { fieldId: "items", kind: "printed", x: 4.5, y: 53.4, w: 12.5, h: 2, text: "7/15  4258", size: 1.4 },
+  { fieldId: "items", kind: "printed", x: 18, y: 53.4, w: 38, h: 2, text: "[1041] PETフィルム #75", size: 1.6 },
+  { fieldId: "items", kind: "printed", x: 57, y: 53.4, w: 10, h: 2, text: "200", size: 1.6, align: "right" },
+  { fieldId: "items", kind: "printed", x: 68.5, y: 53.4, w: 6, h: 2, text: "kg", size: 1.5, align: "center" },
+  { fieldId: "items", kind: "printed", x: 75, y: 53.4, w: 8.5, h: 2, text: "250", size: 1.6, align: "right" },
+  { fieldId: "items", kind: "printed", x: 84, y: 53.4, w: 11, h: 2, text: "50,000", size: 1.6, align: "right" },
+  { fieldId: "items", kind: "printed", x: 18, y: 57.8, w: 38, h: 2, text: "  規格: 2軸延伸PET 75μ-1060幅", size: 1.4 },
+  { fieldId: "items", kind: "printed", x: 84, y: 57.8, w: 11, h: 2, text: "0", size: 1.5, align: "right" },
+  // 明細行3: PP袋
+  { fieldId: "items", kind: "printed", x: 4.5, y: 62.2, w: 12.5, h: 2, text: "7/22  4290", size: 1.4 },
+  { fieldId: "items", kind: "printed", x: 18, y: 62.2, w: 38, h: 2, text: "[2005] PP袋 300×450", size: 1.6 },
+  { fieldId: "items", kind: "printed", x: 57, y: 62.2, w: 10, h: 2, text: "30,000", size: 1.6, align: "right" },
+  { fieldId: "items", kind: "printed", x: 68.5, y: 62.2, w: 6, h: 2, text: "枚", size: 1.5, align: "center" },
+  { fieldId: "items", kind: "printed", x: 75, y: 62.2, w: 8.5, h: 2, text: "1.4", size: 1.6, align: "right" },
+  { fieldId: "items", kind: "printed", x: 84, y: 62.2, w: 11, h: 2, text: "42,000", size: 1.6, align: "right" },
+  // 消費税行(明細に混在する様式)
+  { fieldId: "items", kind: "printed", x: 18, y: 66.6, w: 38, h: 2, text: "請求時消費税 〈10.0%〉", size: 1.5 },
+  { fieldId: "items", kind: "printed", x: 84, y: 66.6, w: 11, h: 2, text: "15,200", size: 1.6, align: "right" },
+  // 表内下部の合計3行(中央寄せ)
+  { kind: "printed", x: 30, y: 75.2, w: 25, h: 2, text: "【 売 上 額 】", size: 1.5 },
+  { kind: "printed", x: 60, y: 75.2, w: 18, h: 2, text: "152,000", size: 1.6, align: "right" },
+  { kind: "printed", x: 30, y: 79.6, w: 25, h: 2, text: "【 外 税 額 】", size: 1.5 },
+  { kind: "printed", x: 60, y: 79.6, w: 18, h: 2, text: "15,200", size: 1.6, align: "right" },
+  // 下部注記
+  { kind: "printed", x: 4, y: 85, w: 60, h: 2, text: "※お支払いは翌月末日までに上記口座へお願いいたします。", size: 1.5 },
+];
+
+const seikyuSpec: AppSpec = {
+  appName: "仕入請求管理",
+  icon: "🧾",
+  description: "仕入先からの月締め請求書を検算・消込・支払管理する業務",
+  fields: [
+    { id: "billing_no", label: "請求No", type: "text", required: true, confidence: 0.97, sourceBox: { x: 68, y: 4, w: 29, h: 3.5 } },
+    { id: "closing_date", label: "締切日", type: "date", required: true, confidence: 0.98, sourceBox: { x: 64, y: 6.6, w: 33, h: 3.4 } },
+    { id: "customer", label: "請求先", type: "text", required: true, confidence: 0.96, sourceBox: { x: 4, y: 16.6, w: 46, h: 5 } },
+    { id: "issuer", label: "仕入先(発行元)", type: "text", required: true, confidence: 0.95, sourceBox: { x: 59, y: 10.5, w: 38, h: 5 } },
+    { id: "reg_no", label: "インボイス登録番号", type: "text", required: false, confidence: 0.9, sourceBox: { x: 59, y: 20, w: 38, h: 3.2 } },
+    { id: "prev_amount", label: "前回御請求額", type: "number", required: true, unit: "円", confidence: 0.94, sourceBox: { x: 3.5, y: 30.5, w: 16.3, h: 7.5 } },
+    { id: "payment", label: "御入金額", type: "number", required: true, unit: "円", confidence: 0.94, sourceBox: { x: 18.8, y: 30.5, w: 16.3, h: 7.5 } },
+    { id: "carryover", label: "繰越金額", type: "number", required: true, unit: "円", confidence: 0.92, sourceBox: { x: 34.2, y: 30.5, w: 16.3, h: 7.5 } },
+    { id: "purchase", label: "今回御買上額", type: "number", required: true, unit: "円", confidence: 0.96, sourceBox: { x: 49.5, y: 30.5, w: 16.3, h: 7.5 } },
+    { id: "tax", label: "消費税", type: "number", required: true, unit: "円", confidence: 0.95, sourceBox: { x: 64.8, y: 30.5, w: 16.3, h: 7.5 } },
+    { id: "billed", label: "今回御請求額", type: "number", required: true, unit: "円", confidence: 0.97, sourceBox: { x: 80.2, y: 30.5, w: 16.3, h: 7.5 } },
+    { id: "items", label: "明細", type: "textarea", required: true, confidence: 0.91, sourceBox: { x: 3.5, y: 39.5, w: 93, h: 44 } },
+    { id: "status", label: "消込ステータス", type: "select", required: false, options: ["未処理", "入力済", "支払済"], confidence: 0.66, sourceBox: { x: 5.5, y: 22.8, w: 25, h: 7 } },
+  ],
+  listColumns: ["closing_date", "issuer", "billed", "status"],
+  approvalFlow: [
+    { name: "入力", role: "経理" },
+    { name: "支払承認", role: "社長" },
+  ],
+  aggregations: [
+    { id: "billed_sum", label: "今月の仕入請求合計", fieldId: "billed", op: "sum", unit: "円" },
+    { id: "invoice_count", label: "今月の請求書件数", fieldId: "billed", op: "count", unit: "件" },
+  ],
+  firstRecord: {
+    billing_no: "00000743",
+    closing_date: "2026-07-31",
+    customer: "オルカ精密工業株式会社",
+    issuer: "シャチホコ鋼材株式会社",
+    reg_no: "T1234567890123",
+    prev_amount: 214500,
+    payment: 214500,
+    carryover: 0,
+    purchase: 152000,
+    tax: 15200,
+    billed: 167200,
+    items:
+      "7/08 [1023] OPPフィルム #40 (2軸延伸PP 40μ-720幅) 500kg ×120 = 60,000\n7/15 [1041] PETフィルム #75 (2軸延伸PET 75μ-1060幅) 200kg ×250 = 50,000\n7/22 [2005] PP袋 300×450 30,000枚 ×1.4 = 42,000\n請求時消費税〈10.0%〉 15,200",
+    status: "入力済",
+  },
+};
+
+const seikyuSeeds: AppRecord[] = [
+  { billing_no: "00000728", closing_date: "2026-07-31", customer: "オルカ精密工業株式会社", issuer: "ラッコ包装株式会社", reg_no: "T2345678901234", prev_amount: 81400, payment: 81400, carryover: 0, purchase: 68000, tax: 6800, billed: 74800, items: "緩衝材・段ボール一式", status: "未処理" },
+  { billing_no: "00000712", closing_date: "2026-07-25", customer: "オルカ精密工業株式会社", issuer: "株式会社 イルカ製作所", reg_no: "T3456789012345", prev_amount: 102300, payment: 102300, carryover: 0, purchase: 88000, tax: 8800, billed: 96800, items: "SUS304 丸棒・アルミ板ほか", status: "支払済" },
+  { billing_no: "00000705", closing_date: "2026-07-25", customer: "オルカ精密工業株式会社", issuer: "ミナト商事株式会社", reg_no: "T4567890123456", prev_amount: 45100, payment: 45100, carryover: 0, purchase: 38000, tax: 3800, billed: 41800, items: "切削油・工具消耗品", status: "入力済" },
+  { billing_no: "00000691", closing_date: "2026-07-20", customer: "オルカ精密工業株式会社", issuer: "東都運輸株式会社", reg_no: "T5678901234567", prev_amount: 30800, payment: 30800, carryover: 0, purchase: 26000, tax: 2600, billed: 28600, items: "7月分 運送費", status: "支払済" },
+];
+
+/* ============================================================
  * エクスポート
  * ============================================================ */
 
 export const SCENARIOS: Scenario[] = [
+  {
+    id: "seikyu",
+    label: "月締め請求明細書",
+    paperKind: "販売管理ソフト印字の請求明細書(実在様式準拠)",
+    paper: seikyuPaper,
+    spec: seikyuSpec,
+    seedRecords: seikyuSeeds,
+    alert:
+      "今月の仕入請求5件のうち「ラッコ包装株式会社」(¥74,800)が未処理のままです。支払期日(翌月末)から逆算すると今週中の入力・承認が必要です。他4件は繰越0円・検算一致を確認済みです。",
+    question: {
+      fieldId: "status",
+      question:
+        "左上に経理のゴム印「入力済」と手書き日付(7/3)を検出しました(信頼度 66%)。この赤印を消込ステータス(未処理→入力済→支払済)としてデジタル管理しますか?",
+      choices: ["はい、ステータス管理する", "いいえ、記録だけでよい"],
+    },
+    validationNote:
+      "検算OK: 繰越 0 + 今回買上 152,000 + 消費税 15,200 = 今回請求額 167,200 ✓(前回請求 214,500 は全額入金済み)",
+  },
   {
     id: "chumonsho",
     label: "FAX注文書",

@@ -36,6 +36,10 @@ export function buildDemoSequence(scenario: Scenario): TimedEvent[] {
     seq.push({ delay: 350, event: { type: "aggregation", agg } });
   }
 
+  if (scenario.validationNote) {
+    seq.push({ delay: 550, event: { type: "phase", label: scenario.validationNote } });
+  }
+
   seq.push({ delay: 650, event: { type: "record", record: spec.firstRecord } });
   seq.push({
     delay: 500,

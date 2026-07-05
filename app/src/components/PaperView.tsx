@@ -49,7 +49,13 @@ function PaperElementView({ el }: { el: PaperElement }) {
       return (
         <div
           className="paper-el paper-stamp"
-          style={{ ...elementStyle(el), fontSize: `${(el.size ?? 2.2)}cqw` }}
+          style={{
+            ...elementStyle(el),
+            fontSize: `${(el.size ?? 2.2)}cqw`,
+            // 角印・ゴム印(square)は四角、認印は丸
+            borderRadius: el.square ? "8%" : "50%",
+            transform: `rotate(${el.rotate ?? -6}deg)`,
+          }}
         >
           {el.text}
         </div>
