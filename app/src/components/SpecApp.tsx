@@ -334,28 +334,116 @@ function Chart({ spec, records }: { spec: AppSpec; records: AppRecord[] }) {
   );
 }
 
+/* ---------- 明細テーブル(DSL v2) ---------- */
+
+function LineItemsTable({
+  spec,
+  onHighlight,
+}: {
+  spec: AppSpec;
+  onHighlight: (box: SourceBox | null) => void;
+}) {
+  const li = spec.lineItems;
+  if (!li || spec.firstRecordLines.length === 0) return null;
+  return (
+    <div
+      className="group rounded-xl border border-transparent hover:border-accent/40 hover:bg-accent-soft/40 px-3 py-2 -mx-3 transition-colors"
+      onMouseEnter={() => li.sourceBox && onHighlight(li.sourceBox)}
+      onMouseLeave={() => onHighlight(null)}
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-xs">🧮</span>
+        <label className="text-sm font-medium">{li.label}</label>
+        <span className="text-[10px] rounded-full bg-accent-soft text-accent px-2 py-0.5">
+          {spec.firstRecordLines.length}行
+        </span>
+        {li.sourceBox && (
+          <span
+            className="text-[10px] text-dim opacity-0 group-hover:opacity-100 transition-opacity ml-auto shrink-0"
+            title="元の紙のどこから読み取ったか"
+          >
+            ← 紙の出典
+          </span>
+        )}
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-line">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-panel text-dim text-xs">
+              {li.columns.map((c) => (
+                <th
+                  key={c.id}
+                  className={`px-3 py-2 font-medium whitespace-nowrap ${c.type === "number" ? "text-right" : "text-left"}`}
+                >
+                  {c.label}
+                  {c.unit ? `(${c.unit})` : ""}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {spec.firstRecordLines.map((line, i) => (
+              <tr key={i} className="border-t border-line/50">
+                {li.columns.map((c) => {
+                  const v = line[c.id];
+                  return (
+                    <td
+                      key={c.id}
+                      className={`px-3 py-1.5 ${c.type === "number" ? "text-right tabular-nums" : ""}`}
+                    >
+                      {v === undefined || v === ""
+                        ? "—"
+                        : typeof v === "number"
+                          ? v.toLocaleString()
+                          : String(v)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- CSV ---------- */
 
+const csvEsc = (s: string) => `"${s.replace(/"/g, '""').replace(/\n/g, " ")}"`;
+
+function downloadBlob(csv: string, filename: string) {
+  // 先頭のBOMでExcelにUTF-8と認識させる(日本語の文字化け防止)
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadLinesCsv(spec: AppSpec) {
+  const li = spec.lineItems;
+  if (!li) return;
+  const header = li.columns.map((c) => csvEsc(c.label)).join(",");
+  const rows = spec.firstRecordLines.map((line) =>
+    li.columns.map((c) => csvEsc(String(line[c.id] ?? ""))).join(","),
+  );
+  downloadBlob([header, ...rows].join("\n"), `${spec.appName}_明細.csv`);
+}
+
 function downloadCsv(spec: AppSpec, records: AppRecord[]) {
-  const esc = (s: string) => `"${s.replace(/"/g, '""').replace(/\n/g, " ")}"`;
-  const header = spec.fields.map((f) => esc(f.label)).join(",");
+  const header = spec.fields.map((f) => csvEsc(f.label)).join(",");
   const rows = records.map((r) =>
     spec.fields
       .map((f) => {
         const v = r[f.id];
-        return esc(typeof v === "boolean" ? (v ? "TRUE" : "FALSE") : String(v ?? ""));
+        return csvEsc(typeof v === "boolean" ? (v ? "TRUE" : "FALSE") : String(v ?? ""));
       })
       .join(","),
   );
-  // 先頭のBOMでExcelにUTF-8と認識させる(日本語の文字化け防止)
-  const csv = "\uFEFF" + [header, ...rows].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${spec.appName}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob([header, ...rows].join("\n"), `${spec.appName}.csv`);
 }
 
 /* ---------- 本体 ---------- */
@@ -441,6 +529,15 @@ export function SpecApp({
           >
             ⬇ CSV
           </button>
+          {spec.lineItems && spec.firstRecordLines.length > 0 && (
+            <button
+              onClick={() => downloadLinesCsv(spec)}
+              className="ml-2 my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer"
+              title="明細行をCSVで書き出し"
+            >
+              ⬇ 明細CSV
+            </button>
+          )}
         </div>
 
         {/* コンテンツ — hidden切替で常時マウント(フォームの編集内容をタブ往復で保持) */}
@@ -459,6 +556,7 @@ export function SpecApp({
                   onHighlight={onHighlight}
                 />
               ))}
+              <LineItemsTable spec={spec} onHighlight={onHighlight} />
             </div>
           </div>
 

@@ -20,10 +20,13 @@ const SYSTEM_PROMPT = `あなたは「カミワザ」— 紙の帳票の写真�
 - 手書きの記入値は firstRecord に {fieldId, value} として入れる。date は YYYY-MM-DD(年の記載が無ければ2026年とみなす)、number は数字のみの文字列、checkbox/stamp は "true" / "false"
 - sourceBox は画像全体に対する%座標(左上原点、0-100)。その項目のラベルと記入値を囲む範囲
 - confidence はその項目の読み取り確度(0-1)。かすれ・判読困難・業務上の意味の曖昧さがあれば正直に下げる
+- 品目・行単位の明細テーブルがある帳票では lineItems に列定義を、lineRows に全行の値を入れる(各行は columns と同順の文字列配列、空欄は空文字列)。明細の値を fields に重複させない。合計金額・小計などのサマリ値は fields へ
+- 明細が20行を超える場合は主要20行までにし、最終行の品名欄に「ほか◯行」と書く。明細テーブルが無い帳票は lineItems: null, lineRows: []
+- 数値は小数点とカンマ(桁区切り)を厳密に区別する(重量・単価・数量は小数を含みうる。例: 1,096.100 は 1096.1)
+- 社名・人名の旧字体・異体字(鐵・榮・髙・﨑 など)は新字体に置き換えず、そのまま読み取る
 - 印鑑欄・承認欄が読み取れる場合のみ approvalFlow に自然な承認ステップ(起票+最大2段)を設定。無ければ null
 - aggregations はこの業務のダッシュボードに出すと有用な集計を最大3つ
-- appName は簡潔な業務アプリ名、icon はこの業務を表す絵文字1文字、description は業務の一行説明
-- 明細行が多い帳票では、明細フィールドの値は主要10行まで+「ほか◯行」の形式で要約し、出力を簡潔に保つ`;
+- appName は簡潔な業務アプリ名、icon はこの業務を表す絵文字1文字、description は業務の一行説明`;
 
 type SupportedMedia = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
 
@@ -302,11 +305,18 @@ export async function streamLiveAnalysis(
     });
   }
 
+  if (spec.lineItems) {
+    emit({
+      type: "lineitems",
+      spec: spec.lineItems,
+      rowCount: spec.firstRecordLines.length,
+    });
+  }
   emit({ type: "approval", flow: spec.approvalFlow });
   for (const agg of spec.aggregations) {
     emit({ type: "aggregation", agg });
   }
-  emit({ type: "record", record: spec.firstRecord });
+  emit({ type: "record", record: spec.firstRecord, lines: spec.firstRecordLines });
   emit({ type: "phase", label: "紙に書かれていた内容を 1件目のデータとして登録しました" });
   emit({ type: "done", spec, mode: "live" });
 }

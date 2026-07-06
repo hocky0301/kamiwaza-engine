@@ -19,6 +19,14 @@ import { SpecApp, QuestionCard, type QuestionState } from "./SpecApp";
 
 type Screen = "select" | "analyzing" | "ready";
 
+// 実在企業の実スキャン帳票50枚での検証実績(docs/05参照)。再検証のたびに更新する
+const VERIFIED_STATS = [
+  "✓ 実在企業の実スキャン帳票50枚で検証",
+  "値レベル精度 99.6%",
+  "幻覚(捏造値) 0件",
+  "180°逆さまFAXも自動補正",
+];
+
 interface UploadedImage {
   dataUrl: string;
   base64: string;
@@ -64,6 +72,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
   const [phases, setPhases] = useState<string[]>([]);
   const [meta, setMeta] = useState<BuildState["meta"]>(null);
   const [fields, setFields] = useState<FieldSpec[]>([]);
+  const [lineItems, setLineItems] = useState<BuildState["lineItems"]>(null);
   const [approval, setApproval] = useState<ApprovalStep[] | null | undefined>(undefined);
   const [aggs, setAggs] = useState<AggregationSpec[]>([]);
   const [record, setRecord] = useState<AppRecord | null>(null);
@@ -88,6 +97,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
     setPhases([]);
     setMeta(null);
     setFields([]);
+    setLineItems(null);
     setApproval(undefined);
     setAggs([]);
     setRecord(null);
@@ -111,12 +121,16 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
         // ライブ失敗→デモ続行などで解析がやり直されるケースに備え、組み立て状態をリセット
         setMeta({ appName: ev.appName, icon: ev.icon, description: ev.description });
         setFields([]);
+        setLineItems(null);
         setApproval(undefined);
         setAggs([]);
         setRecord(null);
         break;
       case "field":
         setFields((f) => [...f, ev.field]);
+        break;
+      case "lineitems":
+        setLineItems({ spec: ev.spec, rowCount: ev.rowCount });
         break;
       case "question":
         setQuestion({
@@ -326,6 +340,16 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
               手書き帳票・FAX注文書の写真1枚を、カミワザが<b className="text-fg">その場で業務アプリに変換</b>します。
               設定画面はありません。撮った紙が、1件目のデータになります。
             </p>
+            <div className="flex flex-wrap items-center justify-center gap-2 mt-5 text-xs">
+              {VERIFIED_STATS.map((s) => (
+                <span
+                  key={s}
+                  className="rounded-full border border-line bg-card px-3 py-1.5 text-dim"
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
           </div>
 
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -421,6 +445,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
                   phases,
                   meta,
                   fields,
+                  lineItems,
                   approval,
                   aggs,
                   recordArrived: record !== null,
