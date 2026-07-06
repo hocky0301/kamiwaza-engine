@@ -22,7 +22,8 @@ const SYSTEM_PROMPT = `あなたは「カミワザ」— 紙の帳票の写真�
 - confidence はその項目の読み取り確度(0-1)。かすれ・判読困難・業務上の意味の曖昧さがあれば正直に下げる
 - 印鑑欄・承認欄が読み取れる場合のみ approvalFlow に自然な承認ステップ(起票+最大2段)を設定。無ければ null
 - aggregations はこの業務のダッシュボードに出すと有用な集計を最大3つ
-- appName は簡潔な業務アプリ名、icon はこの業務を表す絵文字1文字、description は業務の一行説明`;
+- appName は簡潔な業務アプリ名、icon はこの業務を表す絵文字1文字、description は業務の一行説明
+- 明細行が多い帳票では、明細フィールドの値は主要10行まで+「ほか◯行」の形式で要約し、出力を簡潔に保つ`;
 
 type SupportedMedia = "image/jpeg" | "image/png" | "image/webp" | "image/gif";
 
@@ -194,7 +195,7 @@ export async function streamLiveAnalysis(
 
   const stream = client.messages.stream({
     model: "claude-opus-4-8",
-    max_tokens: 8000,
+    max_tokens: 16000,
     system: [
       {
         type: "text",
@@ -269,6 +270,9 @@ export async function streamLiveAnalysis(
 
   if (final.stop_reason === "refusal") {
     throw new Error("解析リクエストが拒否されました");
+  }
+  if (final.stop_reason === "max_tokens") {
+    throw new Error("出力がトークン上限に達しました(明細が多すぎる帳票の可能性)");
   }
 
   const text = final.content.find((b) => b.type === "text")?.text ?? "";
