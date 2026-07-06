@@ -103,6 +103,10 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
       case "phase":
         setPhases((p) => [...p, ev.label]);
         break;
+      case "image":
+        // サーバー側で回転補正された画像に表示を差し替える
+        setUploaded((u) => (u ? { ...u, dataUrl: ev.dataUrl } : u));
+        break;
       case "meta":
         // ライブ失敗→デモ続行などで解析がやり直されるケースに備え、組み立て状態をリセット
         setMeta({ appName: ev.appName, icon: ev.icon, description: ev.description });
