@@ -12,6 +12,8 @@ import type {
 
 export type AnalyzeEvent =
   | { type: "phase"; label: string }
+  /** 回転補正後の画像。クライアントは表示中の紙をこれに差し替える */
+  | { type: "image"; dataUrl: string }
   | { type: "meta"; appName: string; icon: string; description: string }
   | { type: "field"; field: FieldSpec }
   | { type: "approval"; flow: ApprovalStep[] | null }

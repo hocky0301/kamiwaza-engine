@@ -3,6 +3,7 @@
 // 途中経過をデモモードと同じ AnalyzeEvent 列として流す。
 
 import Anthropic from "@anthropic-ai/sdk";
+import sharp from "sharp";
 import {
   ANALYZE_OUTPUT_JSON_SCHEMA,
   toAppSpec,
@@ -96,17 +97,99 @@ function isCompleteField(f: unknown): f is FieldSpec {
   );
 }
 
+/**
+ * 文書の向きを検出する。FAXスキャンは本文が90°/180°回転していることがある
+ * (FAXヘッダだけ正向きのケースもあるため、本文基準で判定させる)。
+ * 返り値は「時計回りに何度回すと正しい向きになるか」。
+ */
+async function detectRotation(
+  client: Anthropic,
+  data: string,
+  mediaType: SupportedMedia,
+): Promise<0 | 90 | 180 | 270> {
+  const res = await client.messages.create({
+    model: "claude-opus-4-8",
+    max_tokens: 200,
+    output_config: {
+      format: {
+        type: "json_schema",
+        schema: {
+          type: "object",
+          properties: {
+            rotation: {
+              type: "integer",
+              enum: [0, 90, 180, 270],
+              description: "時計回りに回転させるべき角度",
+            },
+          },
+          required: ["rotation"],
+          additionalProperties: false,
+        },
+      },
+    },
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: mediaType, data },
+          },
+          {
+            type: "text",
+            text: "この事務書類のスキャン画像を、本文が正しく読める向きにするには時計回りに何度回転させる必要がありますか。注意: FAX送信ヘッダ(最上部の細い送信情報行)は本文と逆向きに印字されることがあります。必ず本文(タイトル・表・記入内容)の向きを基準に判定してください。",
+          },
+        ],
+      },
+    ],
+  });
+  if (res.stop_reason === "refusal") return 0;
+  const text = res.content.find((b) => b.type === "text")?.text ?? "{}";
+  try {
+    const parsed = JSON.parse(text) as { rotation: number };
+    if ([0, 90, 180, 270].includes(parsed.rotation)) {
+      return parsed.rotation as 0 | 90 | 180 | 270;
+    }
+  } catch {
+    // 判定失敗時は回転なしとして続行
+  }
+  return 0;
+}
+
 export async function streamLiveAnalysis(
   image: { data: string; mediaType: string },
   emit: (e: AnalyzeEvent) => void,
 ): Promise<void> {
-  const mediaType = SUPPORTED_MEDIA.includes(image.mediaType as SupportedMedia)
+  let mediaType = SUPPORTED_MEDIA.includes(image.mediaType as SupportedMedia)
     ? (image.mediaType as SupportedMedia)
     : "image/jpeg";
+  let imageData = image.data;
 
   const client = new Anthropic();
 
   emit({ type: "phase", label: "画像を受信しました" });
+  emit({ type: "phase", label: "文書の向きを確認しています…" });
+
+  try {
+    const rotation = await detectRotation(client, imageData, mediaType);
+    if (rotation !== 0) {
+      const rotated = await sharp(Buffer.from(imageData, "base64"))
+        .rotate(rotation)
+        .jpeg({ quality: 88 })
+        .toBuffer();
+      imageData = rotated.toString("base64");
+      mediaType = "image/jpeg";
+      emit({
+        type: "phase",
+        label: `${rotation}°回転した文書を検出 — 向きを自動補正しました`,
+      });
+      emit({ type: "image", dataUrl: `data:image/jpeg;base64,${imageData}` });
+    }
+  } catch (err) {
+    // 向き検出はベストエフォート。失敗しても元画像で解析を続行する
+    console.error("rotation detection failed:", err);
+  }
+
   emit({ type: "phase", label: "Claude Vision が帳票を読み取っています…(ライブ)" });
 
   const stream = client.messages.stream({
@@ -131,7 +214,7 @@ export async function streamLiveAnalysis(
         content: [
           {
             type: "image",
-            source: { type: "base64", media_type: mediaType, data: image.data },
+            source: { type: "base64", media_type: mediaType, data: imageData },
           },
           {
             type: "text",
