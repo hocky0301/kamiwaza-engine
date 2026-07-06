@@ -120,12 +120,21 @@ const chumonshoSpec: AppSpec = {
     { id: "order_date", label: "注文日", type: "date", required: true, confidence: 0.98, sourceBox: { x: 55, y: 15.2, w: 42, h: 5 } },
     { id: "supplier", label: "宛先(発注先)", type: "text", required: true, confidence: 0.97, sourceBox: { x: 3, y: 19.5, w: 56, h: 6.5 } },
     { id: "orderer", label: "発注元 担当者", type: "text", required: true, confidence: 0.94, sourceBox: { x: 57, y: 21, w: 40, h: 10 } },
-    { id: "items", label: "注文品目", type: "textarea", required: true, confidence: 0.92, sourceBox: { x: 3.5, y: 32.5, w: 93, h: 35.5 } },
     { id: "total", label: "合計金額", type: "number", required: true, unit: "円", confidence: 0.96, sourceBox: { x: 61, y: 68.2, w: 36, h: 8 } },
     { id: "delivery_date", label: "納期", type: "date", required: true, confidence: 0.87, sourceBox: { x: 3, y: 77, w: 45, h: 6 } },
     { id: "note", label: "備考", type: "textarea", required: false, confidence: 0.93, sourceBox: { x: 3, y: 84, w: 77, h: 6.5 } },
     { id: "approval_stamp", label: "承認印", type: "stamp", required: false, confidence: 0.58, sourceBox: { x: 73, y: 1.2, w: 24, h: 11.5 } },
   ],
+  lineItems: {
+    label: "注文明細",
+    columns: [
+      { id: "item_name", label: "品名", type: "text" },
+      { id: "qty", label: "数量", type: "number" },
+      { id: "unit_price", label: "単価", type: "number", unit: "円" },
+      { id: "amount", label: "金額", type: "number", unit: "円" },
+    ],
+    sourceBox: { x: 3.5, y: 32.5, w: 93, h: 35.5 },
+  },
   listColumns: ["order_date", "supplier", "total", "delivery_date"],
   approvalFlow: [
     { name: "起票", role: "担当" },
@@ -139,21 +148,25 @@ const chumonshoSpec: AppSpec = {
     order_date: "2026-07-28",
     supplier: "株式会社 イルカ製作所",
     orderer: "佐藤",
-    items: "SUS304 丸棒 φ20 ×30 / アルミ板 A5052 t5 ×12 / 六角ボルト M10×30 ×200",
     total: 85800,
     delivery_date: "2026-08-08",
     note: "前回と同じ仕様でお願いします。納期は午前中指定。",
     approval_stamp: true,
   },
+  firstRecordLines: [
+    { item_name: "SUS304 丸棒 φ20", qty: 30, unit_price: 1200, amount: 36000 },
+    { item_name: "アルミ板 A5052 t5", qty: 12, unit_price: 3400, amount: 40800 },
+    { item_name: "六角ボルト M10×30", qty: 200, unit_price: 45, amount: 9000 },
+  ],
 };
 
 const chumonshoSeeds: AppRecord[] = [
-  { order_date: "2026-07-27", supplier: "株式会社 イルカ製作所", orderer: "佐藤", items: "SS400 平鋼 t9 ×20", total: 62400, delivery_date: "2026-08-05", note: "", approval_stamp: true },
-  { order_date: "2026-07-27", supplier: "シャチホコ鋼材株式会社", orderer: "高橋", items: "H形鋼 200×100 ×6", total: 148000, delivery_date: "2026-08-12", note: "現場直送", approval_stamp: true },
-  { order_date: "2026-07-25", supplier: "株式会社 イルカ製作所", orderer: "佐藤", items: "SUS304 丸棒 φ25 ×15", total: 43500, delivery_date: "2026-08-01", note: "", approval_stamp: true },
-  { order_date: "2026-07-24", supplier: "ミナト商事株式会社", orderer: "鈴木", items: "切削油 20L ×4", total: 30400, delivery_date: "2026-07-30", note: "", approval_stamp: false },
-  { order_date: "2026-07-23", supplier: "株式会社 イルカ製作所", orderer: "佐藤", items: "アルミ角パイプ 30×30 ×24", total: 57600, delivery_date: "2026-07-31", note: "", approval_stamp: true },
-  { order_date: "2026-07-22", supplier: "シャチホコ鋼材株式会社", orderer: "高橋", items: "縞鋼板 t4.5 ×8", total: 71200, delivery_date: "2026-07-29", note: "", approval_stamp: true },
+  { order_date: "2026-07-27", supplier: "株式会社 イルカ製作所", orderer: "佐藤", total: 62400, delivery_date: "2026-08-05", note: "", approval_stamp: true },
+  { order_date: "2026-07-27", supplier: "シャチホコ鋼材株式会社", orderer: "高橋", total: 148000, delivery_date: "2026-08-12", note: "現場直送", approval_stamp: true },
+  { order_date: "2026-07-25", supplier: "株式会社 イルカ製作所", orderer: "佐藤", total: 43500, delivery_date: "2026-08-01", note: "", approval_stamp: true },
+  { order_date: "2026-07-24", supplier: "ミナト商事株式会社", orderer: "鈴木", total: 30400, delivery_date: "2026-07-30", note: "", approval_stamp: false },
+  { order_date: "2026-07-23", supplier: "株式会社 イルカ製作所", orderer: "佐藤", total: 57600, delivery_date: "2026-07-31", note: "", approval_stamp: true },
+  { order_date: "2026-07-22", supplier: "シャチホコ鋼材株式会社", orderer: "高橋", total: 71200, delivery_date: "2026-07-29", note: "", approval_stamp: true },
 ];
 
 /* ============================================================
@@ -219,6 +232,7 @@ const nippoSpec: AppSpec = {
     { id: "tomorrow_plan", label: "明日の予定", type: "textarea", required: false, confidence: 0.92, sourceBox: { x: 3.5, y: 68, w: 93, h: 16 } },
     { id: "supervisor_stamp", label: "監督確認印", type: "stamp", required: false, confidence: 0.62, sourceBox: { x: 77, y: 85, w: 20, h: 13 } },
   ],
+  lineItems: null,
   listColumns: ["work_date", "worker", "site", "safety_check"],
   approvalFlow: [
     { name: "提出", role: "作業員" },
@@ -240,6 +254,7 @@ const nippoSpec: AppSpec = {
     tomorrow_plan: "2F 天井ボード貼り(北側から)",
     supervisor_stamp: true,
   },
+  firstRecordLines: [],
 };
 
 const nippoSeeds: AppRecord[] = [
@@ -320,6 +335,7 @@ const tenkenSpec: AppSpec = {
     { id: "notes", label: "特記事項", type: "textarea", required: false, confidence: 0.94, sourceBox: { x: 3.5, y: 65.5, w: 93, h: 19 } },
     { id: "approver_stamp", label: "係長確認印", type: "stamp", required: false, confidence: 0.6, sourceBox: { x: 77, y: 85.5, w: 20, h: 13 } },
   ],
+  lineItems: null,
   listColumns: ["inspect_date", "equipment", "gauge_status", "pressure"],
   approvalFlow: [
     { name: "点検", role: "点検担当" },
@@ -342,6 +358,7 @@ const tenkenSpec: AppSpec = {
     notes: "圧力ゲージの針が振れ気味。次回定期点検で交換を検討したい。",
     approver_stamp: true,
   },
+  firstRecordLines: [],
 };
 
 const tenkenSeeds: AppRecord[] = [
@@ -483,9 +500,20 @@ const seikyuSpec: AppSpec = {
     { id: "purchase", label: "今回御買上額", type: "number", required: true, unit: "円", confidence: 0.96, sourceBox: { x: 49.5, y: 30.5, w: 16.3, h: 7.5 } },
     { id: "tax", label: "消費税", type: "number", required: true, unit: "円", confidence: 0.95, sourceBox: { x: 64.8, y: 30.5, w: 16.3, h: 7.5 } },
     { id: "billed", label: "今回御請求額", type: "number", required: true, unit: "円", confidence: 0.97, sourceBox: { x: 80.2, y: 30.5, w: 16.3, h: 7.5 } },
-    { id: "items", label: "明細", type: "textarea", required: true, confidence: 0.91, sourceBox: { x: 3.5, y: 39.5, w: 93, h: 44 } },
     { id: "status", label: "消込ステータス", type: "select", required: false, options: ["未処理", "入力済", "支払済"], confidence: 0.66, sourceBox: { x: 5.5, y: 22.8, w: 25, h: 7 } },
   ],
+  lineItems: {
+    label: "請求明細",
+    columns: [
+      { id: "date_slip", label: "日付・伝票No", type: "text" },
+      { id: "item", label: "商品コード・商品名", type: "text" },
+      { id: "qty", label: "数量", type: "number" },
+      { id: "unit", label: "単位", type: "text" },
+      { id: "unit_price", label: "単価", type: "number", unit: "円" },
+      { id: "amount", label: "金額", type: "number", unit: "円" },
+    ],
+    sourceBox: { x: 3.5, y: 39.5, w: 93, h: 44 },
+  },
   listColumns: ["closing_date", "issuer", "billed", "status"],
   approvalFlow: [
     { name: "入力", role: "経理" },
@@ -507,17 +535,21 @@ const seikyuSpec: AppSpec = {
     purchase: 152000,
     tax: 15200,
     billed: 167200,
-    items:
-      "7/08 [1023] OPPフィルム #40 (2軸延伸PP 40μ-720幅) 500kg ×120 = 60,000\n7/15 [1041] PETフィルム #75 (2軸延伸PET 75μ-1060幅) 200kg ×250 = 50,000\n7/22 [2005] PP袋 300×450 30,000枚 ×1.4 = 42,000\n請求時消費税〈10.0%〉 15,200",
     status: "入力済",
   },
+  firstRecordLines: [
+    { date_slip: "7/08 4211", item: "[1023] OPPフィルム #40(規格: 2軸延伸PP 40μ-720幅)", qty: 500, unit: "kg", unit_price: 120, amount: 60000 },
+    { date_slip: "7/15 4258", item: "[1041] PETフィルム #75(規格: 2軸延伸PET 75μ-1060幅)", qty: 200, unit: "kg", unit_price: 250, amount: 50000 },
+    { date_slip: "7/22 4290", item: "[2005] PP袋 300×450", qty: 30000, unit: "枚", unit_price: 1.4, amount: 42000 },
+    { item: "請求時消費税〈10.0%〉", amount: 15200 },
+  ],
 };
 
 const seikyuSeeds: AppRecord[] = [
-  { billing_no: "00000728", closing_date: "2026-07-31", customer: "オルカ精密工業株式会社", issuer: "ラッコ包装株式会社", reg_no: "T2345678901234", prev_amount: 81400, payment: 81400, carryover: 0, purchase: 68000, tax: 6800, billed: 74800, items: "緩衝材・段ボール一式", status: "未処理" },
-  { billing_no: "00000712", closing_date: "2026-07-25", customer: "オルカ精密工業株式会社", issuer: "株式会社 イルカ製作所", reg_no: "T3456789012345", prev_amount: 102300, payment: 102300, carryover: 0, purchase: 88000, tax: 8800, billed: 96800, items: "SUS304 丸棒・アルミ板ほか", status: "支払済" },
-  { billing_no: "00000705", closing_date: "2026-07-25", customer: "オルカ精密工業株式会社", issuer: "ミナト商事株式会社", reg_no: "T4567890123456", prev_amount: 45100, payment: 45100, carryover: 0, purchase: 38000, tax: 3800, billed: 41800, items: "切削油・工具消耗品", status: "入力済" },
-  { billing_no: "00000691", closing_date: "2026-07-20", customer: "オルカ精密工業株式会社", issuer: "東都運輸株式会社", reg_no: "T5678901234567", prev_amount: 30800, payment: 30800, carryover: 0, purchase: 26000, tax: 2600, billed: 28600, items: "7月分 運送費", status: "支払済" },
+  { billing_no: "00000728", closing_date: "2026-07-31", customer: "オルカ精密工業株式会社", issuer: "ラッコ包装株式会社", reg_no: "T2345678901234", prev_amount: 81400, payment: 81400, carryover: 0, purchase: 68000, tax: 6800, billed: 74800, status: "未処理" },
+  { billing_no: "00000712", closing_date: "2026-07-25", customer: "オルカ精密工業株式会社", issuer: "株式会社 イルカ製作所", reg_no: "T3456789012345", prev_amount: 102300, payment: 102300, carryover: 0, purchase: 88000, tax: 8800, billed: 96800, status: "支払済" },
+  { billing_no: "00000705", closing_date: "2026-07-25", customer: "オルカ精密工業株式会社", issuer: "ミナト商事株式会社", reg_no: "T4567890123456", prev_amount: 45100, payment: 45100, carryover: 0, purchase: 38000, tax: 3800, billed: 41800, status: "入力済" },
+  { billing_no: "00000691", closing_date: "2026-07-20", customer: "オルカ精密工業株式会社", issuer: "東都運輸株式会社", reg_no: "T5678901234567", prev_amount: 30800, payment: 30800, carryover: 0, purchase: 26000, tax: 2600, billed: 28600, status: "支払済" },
 ];
 
 /* ============================================================

@@ -26,6 +26,17 @@ export function buildDemoSequence(scenario: Scenario): TimedEvent[] {
     seq.push({ delay: 380, event: { type: "field", field } });
   }
 
+  if (spec.lineItems) {
+    seq.push({
+      delay: 500,
+      event: {
+        type: "lineitems",
+        spec: spec.lineItems,
+        rowCount: spec.firstRecordLines.length,
+      },
+    });
+  }
+
   if (scenario.question) {
     seq.push({ delay: 550, event: { type: "question", ...scenario.question } });
   }
@@ -40,7 +51,10 @@ export function buildDemoSequence(scenario: Scenario): TimedEvent[] {
     seq.push({ delay: 550, event: { type: "phase", label: scenario.validationNote } });
   }
 
-  seq.push({ delay: 650, event: { type: "record", record: spec.firstRecord } });
+  seq.push({
+    delay: 650,
+    event: { type: "record", record: spec.firstRecord, lines: spec.firstRecordLines },
+  });
   seq.push({
     delay: 500,
     event: { type: "phase", label: "紙に書かれていた内容を 1件目のデータとして登録しました" },

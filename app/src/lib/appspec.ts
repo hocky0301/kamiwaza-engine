@@ -51,27 +51,60 @@ export interface AggregationSpec {
 export type RecordValue = string | number | boolean;
 export type AppRecord = Record<string, RecordValue>;
 
+/* ---------- DSL v2: 明細行(lineItems) ---------- */
+
+export interface ColumnSpec {
+  id: string;
+  label: string;
+  type: "text" | "number" | "date";
+  unit?: string;
+}
+
+export interface LineItemsSpec {
+  /** 明細テーブルの名前(例: 注文明細) */
+  label: string;
+  columns: ColumnSpec[];
+  /** 元帳票の明細テーブル全体の位置 */
+  sourceBox?: SourceBox;
+}
+
+/** 明細1行。キーはColumnSpec.id */
+export type LineRecord = Record<string, string | number>;
+
 export interface AppSpec {
   appName: string;
   /** 絵文字1文字 */
   icon: string;
   description: string;
   fields: FieldSpec[];
+  /** 明細テーブル定義(帳票に明細行がなければnull)— DSL v2 */
+  lineItems: LineItemsSpec | null;
   /** 一覧画面に出すフィールドID(4つ程度) */
   listColumns: string[];
   approvalFlow: ApprovalStep[] | null;
   aggregations: AggregationSpec[];
   /** 撮影した紙から読み取った1件目のレコード */
   firstRecord: AppRecord;
+  /** 1件目の明細行 — DSL v2 */
+  firstRecordLines: LineRecord[];
 }
 
 /**
  * ライブモードのワイヤ型。structured outputsは additionalProperties: false 必須のため、
- * 動的キーを持つ firstRecord だけ {fieldId, value} のペア配列で受け取り、
+ * 動的キーを持つ firstRecord は {fieldId, value} のペア配列、
+ * 明細行(lineRows)は columns と同順の文字列配列で受け取り、
  * toAppSpec() でアプリ内部の AppSpec に変換する。
  */
-export interface AnalyzeOutput extends Omit<AppSpec, "firstRecord"> {
+export interface AnalyzeOutput
+  extends Omit<AppSpec, "firstRecord" | "firstRecordLines"> {
   firstRecord: { fieldId: string; value: string }[];
+  /** 明細行。各行は lineItems.columns と同じ順の値(空欄は "") */
+  lineRows: string[][];
+}
+
+function parseNumeric(raw: string): number | string {
+  const n = parseFloat(raw.replace(/[¥,円\s]/g, ""));
+  return Number.isFinite(n) ? n : raw;
 }
 
 export function toAppSpec(out: AnalyzeOutput): AppSpec {
@@ -81,15 +114,30 @@ export function toAppSpec(out: AnalyzeOutput): AppSpec {
     const raw = pair.value.trim();
     if (!field) continue;
     if (field.type === "number") {
-      const n = parseFloat(raw.replace(/[¥,円\s]/g, ""));
-      record[pair.fieldId] = Number.isFinite(n) ? n : raw;
+      record[pair.fieldId] = parseNumeric(raw);
     } else if (field.type === "checkbox" || field.type === "stamp") {
       record[pair.fieldId] = ["true", "はい", "○", "済", "有", "1"].includes(raw);
     } else {
       record[pair.fieldId] = raw;
     }
   }
-  return { ...out, firstRecord: record };
+
+  const lines: LineRecord[] = [];
+  if (out.lineItems) {
+    for (const row of out.lineRows ?? []) {
+      const line: LineRecord = {};
+      out.lineItems.columns.forEach((col, i) => {
+        const raw = (row[i] ?? "").trim();
+        if (raw === "") return;
+        line[col.id] = col.type === "number" ? parseNumeric(raw) : raw;
+      });
+      if (Object.keys(line).length > 0) lines.push(line);
+    }
+  }
+
+  const { lineRows: _lineRows, ...rest } = out;
+  void _lineRows;
+  return { ...rest, firstRecord: record, firstRecordLines: lines };
 }
 
 /**
@@ -133,6 +181,48 @@ export const ANALYZE_OUTPUT_JSON_SCHEMA = {
         required: ["id", "label", "type", "required", "confidence"],
         additionalProperties: false,
       },
+    },
+    lineItems: {
+      type: ["object", "null"],
+      description:
+        "帳票に品目・行単位の明細テーブルがある場合のみ定義。なければnull。明細の値はfieldsに重複させない(合計金額などのサマリはfieldsへ)",
+      properties: {
+        label: { type: "string", description: "明細テーブルの名前(例: 注文明細)" },
+        columns: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "英小文字スネークケースの列ID" },
+              label: { type: "string" },
+              type: { type: "string", enum: ["text", "number", "date"] },
+              unit: { type: "string" },
+            },
+            required: ["id", "label", "type"],
+            additionalProperties: false,
+          },
+        },
+        sourceBox: {
+          type: "object",
+          description: "明細テーブル全体の位置(%座標)",
+          properties: {
+            x: { type: "number" },
+            y: { type: "number" },
+            w: { type: "number" },
+            h: { type: "number" },
+          },
+          required: ["x", "y", "w", "h"],
+          additionalProperties: false,
+        },
+      },
+      required: ["label", "columns"],
+      additionalProperties: false,
+    },
+    lineRows: {
+      type: "array",
+      description:
+        "明細の全行。各行はlineItems.columnsと同じ順の値の配列(空欄は空文字列)。lineItemsがnullなら空配列。行が20行を超える場合は主要20行+最終行に「ほか◯行」",
+      items: { type: "array", items: { type: "string" } },
     },
     listColumns: {
       type: "array",
@@ -194,6 +284,8 @@ export const ANALYZE_OUTPUT_JSON_SCHEMA = {
     "icon",
     "description",
     "fields",
+    "lineItems",
+    "lineRows",
     "listColumns",
     "approvalFlow",
     "aggregations",

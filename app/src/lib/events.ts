@@ -8,6 +8,8 @@ import type {
   ApprovalStep,
   AggregationSpec,
   AppRecord,
+  LineItemsSpec,
+  LineRecord,
 } from "./appspec";
 
 export type AnalyzeEvent =
@@ -16,9 +18,11 @@ export type AnalyzeEvent =
   | { type: "image"; dataUrl: string }
   | { type: "meta"; appName: string; icon: string; description: string }
   | { type: "field"; field: FieldSpec }
+  /** 明細テーブルの定義(DSL v2) */
+  | { type: "lineitems"; spec: LineItemsSpec; rowCount: number }
   | { type: "approval"; flow: ApprovalStep[] | null }
   | { type: "aggregation"; agg: AggregationSpec }
-  | { type: "record"; record: AppRecord }
+  | { type: "record"; record: AppRecord; lines?: LineRecord[] }
   | { type: "question"; fieldId: string; question: string; choices: string[] }
   | { type: "done"; spec: AppSpec; mode: "demo" | "live"; scenarioId?: string }
   | { type: "error"; message: string };

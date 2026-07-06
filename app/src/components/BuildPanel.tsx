@@ -4,13 +4,19 @@
 // SSEでフィールドが届くたびに、アプリが目の前で組み上がっていく「見せ場」。
 
 import { useEffect, useRef } from "react";
-import type { AggregationSpec, ApprovalStep, FieldSpec } from "@/lib/appspec";
+import type {
+  AggregationSpec,
+  ApprovalStep,
+  FieldSpec,
+  LineItemsSpec,
+} from "@/lib/appspec";
 import { FIELD_TYPE_META, ConfidenceBadge } from "./field-meta";
 
 export interface BuildState {
   phases: string[];
   meta: { appName: string; icon: string; description: string } | null;
   fields: FieldSpec[];
+  lineItems: { spec: LineItemsSpec; rowCount: number } | null;
   approval: ApprovalStep[] | null | undefined; // undefined = 未着
   aggs: AggregationSpec[];
   recordArrived: boolean;
@@ -18,14 +24,14 @@ export interface BuildState {
 }
 
 export function BuildPanel({ state }: { state: BuildState }) {
-  const { phases, meta, fields, approval, aggs, recordArrived, done } = state;
+  const { phases, meta, fields, lineItems, approval, aggs, recordArrived, done } = state;
   const listRef = useRef<HTMLDivElement>(null);
 
   // 新しい部品が届くたびに最新の行へ追従スクロール
   useEffect(() => {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [fields.length, aggs.length, approval, recordArrived]);
+  }, [fields.length, lineItems, aggs.length, approval, recordArrived]);
 
   return (
     <div className="flex flex-col gap-4 h-full">
@@ -87,6 +93,21 @@ export function BuildPanel({ state }: { state: BuildState }) {
                   </div>
                 );
               })}
+
+              {lineItems && (
+                <div className="field-in flex items-center gap-3 rounded-lg border border-accent/40 bg-accent-soft/50 px-3 py-2.5 text-sm">
+                  <span className="w-6 text-center shrink-0">🧮</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium">
+                      明細テーブル「{lineItems.spec.label}」
+                      <span className="text-accent ml-2">{lineItems.rowCount}行</span>
+                    </div>
+                    <div className="text-[11px] text-dim truncate">
+                      {lineItems.spec.columns.map((c) => c.label).join(" | ")}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {approval && approval.length > 0 && (
                 <div className="field-in flex items-center gap-2 rounded-lg border border-line bg-panel px-3 py-2.5 text-sm">
