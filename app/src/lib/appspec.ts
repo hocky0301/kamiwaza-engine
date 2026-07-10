@@ -33,6 +33,9 @@ export interface FieldSpec {
   confidence: number;
   /** 元帳票のどこから読み取ったか */
   sourceBox?: SourceBox;
+  /** number用の下限/上限バリデーション(「日本語で書いて直す」で後付けされる。解析経路では未使用) */
+  min?: number;
+  max?: number;
 }
 
 export interface ApprovalStep {
@@ -58,6 +61,9 @@ export interface ColumnSpec {
   label: string;
   type: "text" | "number" | "date";
   unit?: string;
+  /** number列用の下限/上限バリデーション(「日本語で書いて直す」で後付けされる) */
+  min?: number;
+  max?: number;
 }
 
 export interface LineItemsSpec {

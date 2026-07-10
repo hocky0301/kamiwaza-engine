@@ -3,7 +3,7 @@
 // 決定論的レンダラー: 妥当なAppSpecなら何でも「業務アプリ」として描画する。
 // LLMはスペックしか出力しないため、UI品質はこちら側で常に担保される。
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AppSpec,
   AppRecord,
@@ -11,6 +11,12 @@ import type {
   SourceBox,
   RecordValue,
 } from "@/lib/appspec";
+import {
+  checkLimit,
+  roiSummary,
+  type CommandChip,
+  type PatchLogEntry,
+} from "@/lib/specdiff";
 import { FIELD_TYPE_META, ConfidenceBadge } from "./field-meta";
 
 type Tab = "form" | "list" | "dashboard";
@@ -22,6 +28,9 @@ export interface QuestionState {
   answer: number | null;
 }
 
+/** 提案チップ+適用可否(すべて適用済みならdisabled) */
+export type ChipState = CommandChip & { disabled: boolean };
+
 interface SpecAppProps {
   spec: AppSpec;
   /** records[0] が今スキャンした1件目 */
@@ -31,6 +40,14 @@ interface SpecAppProps {
   onHighlight: (box: SourceBox | null) => void;
   question: QuestionState | null;
   onAnswer: (choiceIndex: number) => void;
+  /* --- 日本語で書いて直す --- */
+  chips: ChipState[];
+  onChip: (chip: ChipState) => void;
+  onInstruction: (text: string) => void;
+  onUndo: () => void;
+  canUndo: boolean;
+  patchLog: PatchLogEntry[];
+  busy: boolean;
 }
 
 /* ---------- 値フォーマット ---------- */
@@ -95,6 +112,124 @@ export function QuestionCard({
   );
 }
 
+/* ---------- 日本語で書いて直す(コマンドバー+手術ログ) ---------- */
+
+function CommandBar({
+  chips,
+  onChip,
+  onInstruction,
+  onUndo,
+  canUndo,
+  patchLog,
+  busy,
+}: Pick<
+  SpecAppProps,
+  "chips" | "onChip" | "onInstruction" | "onUndo" | "canUndo" | "patchLog" | "busy"
+>) {
+  const [text, setText] = useState("");
+  const logRef = useRef<HTMLDivElement>(null);
+
+  // 新しいログ行が来たら追従スクロール
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [patchLog.length]);
+
+  const submit = () => {
+    if (!text.trim() || busy) return;
+    onInstruction(text);
+    setText("");
+  };
+
+  return (
+    <div className="card p-3.5">
+      <div className="flex items-center gap-2">
+        <span className="text-base shrink-0">🗣️</span>
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
+          }}
+          disabled={busy}
+          placeholder="このアプリに日本語で指示…(例: 承認を2段階にして、単価に上限チェックを)"
+          className="flex-1 rounded-lg border border-line bg-panel px-3 py-2 text-sm focus:border-accent outline-none disabled:opacity-50"
+        />
+        <button
+          onClick={submit}
+          disabled={busy || !text.trim()}
+          className="rounded-lg bg-accent text-white px-3.5 py-2 text-sm font-medium hover:opacity-85 disabled:opacity-40 transition-opacity cursor-pointer shrink-0"
+        >
+          {busy ? (
+            <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent spin-slow align-middle" />
+          ) : (
+            "作り替える"
+          )}
+        </button>
+        {canUndo && (
+          <button
+            onClick={onUndo}
+            disabled={busy}
+            className="rounded-lg border border-line px-3 py-2 text-sm text-dim hover:text-fg hover:border-dim disabled:opacity-40 transition-colors cursor-pointer shrink-0"
+            title="直前の変更を元に戻す"
+          >
+            ↩ 戻す
+          </button>
+        )}
+      </div>
+
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2.5">
+          {chips.map((chip) => (
+            <button
+              key={chip.id}
+              onClick={() => onChip(chip)}
+              disabled={busy || chip.disabled}
+              className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors cursor-pointer ${
+                chip.disabled
+                  ? "border-line text-dim/50 line-through cursor-default"
+                  : "border-accent/50 text-accent hover:bg-accent-soft"
+              } disabled:cursor-default`}
+              title={chip.disabled ? "適用済み" : "タップでその場で作り替え(オフラインでも動作)"}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {patchLog.length > 0 && (
+        <div
+          ref={logRef}
+          className="mt-2.5 rounded-lg bg-panel border border-line px-3 py-2 font-mono text-[11px] leading-5 max-h-24 overflow-y-auto"
+        >
+          {patchLog.map((e, i) => (
+            <div key={i} className="field-in">
+              {e.info ? (
+                <span className="text-dim">{e.summary}</span>
+              ) : e.ok ? (
+                <>
+                  <span className="text-ok">✓ </span>
+                  <span className="text-fg">{e.summary}</span>
+                </>
+              ) : (
+                <>
+                  <span className="text-accent">✗ </span>
+                  <span className="text-dim">
+                    {e.summary}
+                    {e.reason ? ` — ${e.reason}` : ""}
+                  </span>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- フォーム ---------- */
 
 function FormField({
@@ -102,13 +237,16 @@ function FormField({
   value,
   confirmed,
   onHighlight,
+  roiNote,
 }: {
   field: FieldSpec;
   value: RecordValue | undefined;
   confirmed: boolean;
   onHighlight: (box: SourceBox | null) => void;
+  roiNote?: string | null;
 }) {
   const tm = FIELD_TYPE_META[field.type];
+  const violation = field.type === "number" ? checkLimit(field, value) : null;
 
   const input = (() => {
     switch (field.type) {
@@ -158,13 +296,33 @@ function FormField({
         );
       case "number":
         return (
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              defaultValue={typeof value === "number" ? value : undefined}
-              className="w-full rounded-lg border border-line bg-panel px-3 py-2 text-sm focus:border-accent outline-none"
-            />
-            {field.unit && <span className="text-sm text-dim shrink-0">{field.unit}</span>}
+          <div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                defaultValue={typeof value === "number" ? value : undefined}
+                className={`w-full rounded-lg border bg-panel px-3 py-2 text-sm outline-none ${
+                  violation
+                    ? "border-accent text-accent font-bold"
+                    : "border-line focus:border-accent"
+                }`}
+              />
+              {field.unit && <span className="text-sm text-dim shrink-0">{field.unit}</span>}
+            </div>
+            {violation && (
+              <div className="field-in mt-1.5 text-xs text-accent font-medium">
+                ⚠ {violation.kind === "max" ? "上限" : "下限"}{" "}
+                {violation.limit.toLocaleString()}
+                {field.unit ?? ""} を {violation.amount.toLocaleString()}
+                {field.unit ?? ""} {violation.kind === "max" ? "超過" : "下回り"} —{" "}
+                {field.min !== undefined && violation.kind === "min"
+                  ? "確認が必要です"
+                  : "承認前に確認が必要です"}
+              </div>
+            )}
+            {roiNote && (
+              <div className="field-in mt-1 text-[11px] text-warn">💰 {roiNote}</div>
+            )}
           </div>
         );
       case "date":
@@ -377,6 +535,16 @@ function LineItemsTable({
                 >
                   {c.label}
                   {c.unit ? `(${c.unit})` : ""}
+                  {c.max !== undefined && (
+                    <span className="ml-1 text-accent font-bold">
+                      ≦{c.max.toLocaleString()}
+                    </span>
+                  )}
+                  {c.min !== undefined && (
+                    <span className="ml-1 text-accent font-bold">
+                      ≧{c.min.toLocaleString()}
+                    </span>
+                  )}
                 </th>
               ))}
             </tr>
@@ -386,16 +554,25 @@ function LineItemsTable({
               <tr key={i} className="border-t border-line/50">
                 {li.columns.map((c) => {
                   const v = line[c.id];
+                  const viol = c.type === "number" ? checkLimit(c, v) : null;
                   return (
                     <td
                       key={c.id}
-                      className={`px-3 py-1.5 ${c.type === "number" ? "text-right tabular-nums" : ""}`}
+                      className={`px-3 py-1.5 ${c.type === "number" ? "text-right tabular-nums" : ""} ${
+                        viol ? "text-accent font-bold bg-accent-soft/50" : ""
+                      }`}
+                      title={
+                        viol
+                          ? `${viol.kind === "max" ? "上限" : "下限"} ${viol.limit.toLocaleString()}${c.unit ?? ""} を ${viol.amount.toLocaleString()}${c.unit ?? ""} ${viol.kind === "max" ? "超過" : "下回り"}`
+                          : undefined
+                      }
                     >
                       {v === undefined || v === ""
                         ? "—"
                         : typeof v === "number"
                           ? v.toLocaleString()
                           : String(v)}
+                      {viol && <span className="ml-1">⚠</span>}
                     </td>
                   );
                 })}
@@ -456,6 +633,13 @@ export function SpecApp({
   onHighlight,
   question,
   onAnswer,
+  chips,
+  onChip,
+  onInstruction,
+  onUndo,
+  canUndo,
+  patchLog,
+  busy,
 }: SpecAppProps) {
   const [tab, setTab] = useState<Tab>("form");
   const first = records[0];
@@ -471,6 +655,16 @@ export function SpecApp({
       {question && question.answer === null && (
         <QuestionCard question={question} onAnswer={onAnswer} />
       )}
+
+      <CommandBar
+        chips={chips}
+        onChip={onChip}
+        onInstruction={onInstruction}
+        onUndo={onUndo}
+        canUndo={canUndo}
+        patchLog={patchLog}
+        busy={busy}
+      />
 
       <div className="card flex-1 overflow-hidden flex flex-col">
         {/* アプリヘッダ */}
@@ -554,6 +748,11 @@ export function SpecApp({
                   value={first?.[f.id]}
                   confirmed={question?.fieldId === f.id && question.answer === 0}
                   onHighlight={onHighlight}
+                  roiNote={
+                    f.type === "number" && checkLimit(f, first?.[f.id])
+                      ? roiSummary(f, records)
+                      : null
+                  }
                 />
               ))}
               <LineItemsTable spec={spec} onHighlight={onHighlight} />
