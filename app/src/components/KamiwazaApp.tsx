@@ -12,10 +12,21 @@ import type {
   SourceBox,
 } from "@/lib/appspec";
 import type { AnalyzeEvent } from "@/lib/events";
+import {
+  applyDiff,
+  chipsForScenario,
+  genericChips,
+  keywordFallback,
+  type PatchLogEntry,
+  type ReconfigureEvent,
+  type SpecDiff,
+} from "@/lib/specdiff";
 import { SCENARIOS, getScenario } from "@/lib/scenarios";
 import { PaperView } from "./PaperView";
 import { BuildPanel, type BuildState } from "./BuildPanel";
-import { SpecApp, QuestionCard, type QuestionState } from "./SpecApp";
+import { SpecApp, QuestionCard, type QuestionState, type ChipState } from "./SpecApp";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type Screen = "select" | "analyzing" | "ready";
 
@@ -84,8 +95,15 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
   const [failed, setFailed] = useState(false);
   const [highlight, setHighlight] = useState<SourceBox | null>(null);
 
+  // 「日本語で書いて直す」— 適用済みパッチと手術ログ
+  const [patches, setPatches] = useState<SpecDiff[]>([]);
+  const [patchLog, setPatchLog] = useState<PatchLogEntry[]>([]);
+  const [reconfBusy, setReconfBusy] = useState(false);
+
   const abortRef = useRef<AbortController | null>(null);
   const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 最新のreconfiguredSpecを非同期処理から参照するためのref */
+  const specRef = useRef<AppSpec | null>(null);
 
   const scenario = getScenario(scenarioId);
   const isUpload = uploaded !== null;
@@ -107,6 +125,9 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
     setError(null);
     setFailed(false);
     setHighlight(null);
+    setPatches([]);
+    setPatchLog([]);
+    setReconfBusy(false);
   }, []);
 
   const handleEvent = useCallback((ev: AnalyzeEvent) => {
@@ -275,11 +296,140 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
     };
   }, [spec, question]);
 
+  // 「日本語で書いて直す」のパッチを畳み込んだ最終スペック。
+  // applyDiffは純粋関数で、不正なopは無視して元specを返すため常に安全
+  const reconfiguredSpec = useMemo(() => {
+    if (!effectiveSpec) return null;
+    return patches.reduce((s, d) => applyDiff(s, d).spec, effectiveSpec);
+  }, [effectiveSpec, patches]);
+  specRef.current = reconfiguredSpec;
+
   const records = useMemo<AppRecord[]>(() => {
-    if (!effectiveSpec) return [];
-    if (mode === "live") return [effectiveSpec.firstRecord];
-    return [effectiveSpec.firstRecord, ...scenario.seedRecords];
-  }, [effectiveSpec, mode, scenario]);
+    if (!reconfiguredSpec) return [];
+    if (mode === "live") return [reconfiguredSpec.firstRecord];
+    return [reconfiguredSpec.firstRecord, ...scenario.seedRecords];
+  }, [reconfiguredSpec, mode, scenario]);
+
+  // 提案チップ(シナリオ別。ライブ写真のときは実データから決定論的に生成)
+  const chips = useMemo<ChipState[]>(() => {
+    if (!reconfiguredSpec || screen !== "ready") return [];
+    const base =
+      mode === "live" && isUpload
+        ? genericChips(reconfiguredSpec, reconfiguredSpec.firstRecord)
+        : chipsForScenario(scenarioId);
+    // 全opが適用不能になったチップ(適用済み等)はグレーアウト
+    return base.map((chip) => ({
+      ...chip,
+      disabled: !chip.ops.some((op) => applyDiff(reconfiguredSpec, op).ok),
+    }));
+  }, [reconfiguredSpec, screen, mode, isUpload, scenarioId]);
+
+  /** opの列を1つずつ(手術ログを流しながら)適用する */
+  const runOps = useCallback(async (ops: SpecDiff[], stagger = 300) => {
+    setReconfBusy(true);
+    try {
+      let cur = specRef.current;
+      for (const op of ops) {
+        if (!cur) break;
+        const r = applyDiff(cur, op);
+        setPatchLog((l) => [...l, { summary: r.summary, ok: r.ok, reason: r.reason }]);
+        if (r.ok) {
+          cur = r.spec;
+          setPatches((p) => [...p, op]);
+        }
+        await sleep(stagger);
+      }
+    } finally {
+      setReconfBusy(false);
+    }
+  }, []);
+
+  /** 提案チップ: ネットワークを一切通らずローカルで確実にモーフ(デモの生命線) */
+  const applyChip = useCallback(
+    (chip: ChipState) => {
+      if (reconfBusy || chip.disabled) return;
+      void runOps(chip.ops);
+    },
+    [reconfBusy, runOps],
+  );
+
+  /** 自由文入力: ライブtool use経路。失敗したらローカルのキーワード解釈へ */
+  const sendInstruction = useCallback(
+    async (text: string) => {
+      const instruction = text.trim();
+      if (!instruction || reconfBusy || !specRef.current) return;
+      setReconfBusy(true);
+      setPatchLog((l) => [...l, { summary: `「${instruction}」`, ok: true, info: true }]);
+      try {
+        const res = await fetch("/api/reconfigure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ spec: specRef.current, instruction }),
+        });
+        if (!res.ok || !res.body) throw new Error(`reconfigure API ${res.status}`);
+        const reader = res.body.getReader();
+        const dec = new TextDecoder();
+        let buf = "";
+        let cur = specRef.current;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const parts = buf.split("\n\n");
+          buf = parts.pop() ?? "";
+          for (const part of parts) {
+            const line = part.trim();
+            if (!line.startsWith("data: ")) continue;
+            let ev: ReconfigureEvent;
+            try {
+              ev = JSON.parse(line.slice(6)) as ReconfigureEvent;
+            } catch {
+              continue;
+            }
+            if (ev.type === "rphase") {
+              setPatchLog((l) => [...l, { summary: ev.label, ok: true, info: true }]);
+            } else if (ev.type === "patch") {
+              // サーバーの判定に頼らず、手元の最新specでも再検証してから適用
+              const r = cur ? applyDiff(cur, ev.diff) : null;
+              if (ev.ok && r?.ok) {
+                cur = r.spec;
+                setPatches((p) => [...p, ev.diff]);
+                setPatchLog((l) => [...l, { summary: ev.summary, ok: true }]);
+              } else {
+                setPatchLog((l) => [
+                  ...l,
+                  { summary: ev.summary, ok: false, reason: ev.reason ?? r?.reason },
+                ]);
+              }
+              await sleep(220);
+            } else if (ev.type === "rerror") {
+              setPatchLog((l) => [...l, { summary: ev.message, ok: false }]);
+            }
+          }
+        }
+      } catch {
+        // ネットワーク断でも止めない: ローカルのキーワード解釈にフォールバック
+        const diffs = specRef.current ? keywordFallback(specRef.current, instruction) : [];
+        if (diffs.length === 0) {
+          setPatchLog((l) => [
+            ...l,
+            { summary: "指示を解釈できませんでした。言い換えてみてください", ok: false },
+          ]);
+        } else {
+          setPatchLog((l) => [...l, { summary: "オフライン解釈で適用します", ok: true, info: true }]);
+          await runOps(diffs);
+        }
+      } finally {
+        setReconfBusy(false);
+      }
+    },
+    [reconfBusy, runOps],
+  );
+
+  const undoPatch = useCallback(() => {
+    setPatches((p) => (p.length ? p.slice(0, -1) : p));
+    setPatchLog((l) => [...l, { summary: "↩ 直前の変更を元に戻しました", ok: true, info: true }]);
+  }, []);
 
   /* ---------------- 画面 ---------------- */
 
@@ -460,15 +610,22 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
               )}
             </>
           )}
-          {screen === "ready" && effectiveSpec && (
+          {screen === "ready" && reconfiguredSpec && (
             <SpecApp
-              spec={effectiveSpec}
+              spec={reconfiguredSpec}
               records={records}
               alert={mode === "demo" ? scenario.alert : null}
               mode={mode}
               onHighlight={setHighlight}
               question={question}
               onAnswer={answerQuestion}
+              chips={chips}
+              onChip={applyChip}
+              onInstruction={sendInstruction}
+              onUndo={undoPatch}
+              canUndo={patches.length > 0}
+              patchLog={patchLog}
+              busy={reconfBusy}
             />
           )}
         </div>
