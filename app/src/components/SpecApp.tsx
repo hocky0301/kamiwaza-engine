@@ -72,9 +72,12 @@ function fmtValue(field: FieldSpec | undefined, v: RecordValue | undefined): str
 export function QuestionCard({
   question,
   onAnswer,
+  disabled = false,
 }: {
   question: QuestionState;
   onAnswer: (i: number) => void;
+  /** 再構成の適用中は回答を受け付けない(specスナップショットの整合を守る) */
+  disabled?: boolean;
 }) {
   return (
     <div className="field-in card border-warn/50 bg-warn/5 p-4">
@@ -91,7 +94,8 @@ export function QuestionCard({
                 <button
                   key={i}
                   onClick={() => onAnswer(i)}
-                  className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors cursor-pointer ${
+                  disabled={disabled}
+                  className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default ${
                     i === 0
                       ? "bg-accent text-white hover:opacity-85"
                       : "border border-line text-dim hover:text-fg hover:border-dim"
@@ -150,11 +154,12 @@ function CommandBar({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
+            // SafariはIME確定EnterでisComposing=falseのままkeyCode=229を報告する
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) submit();
           }}
           disabled={busy}
           placeholder="このアプリに日本語で指示…(例: 承認を2段階にして、単価に上限チェックを)"
-          className="flex-1 rounded-lg border border-line bg-panel px-3 py-2 text-sm focus:border-accent outline-none disabled:opacity-50"
+          className="flex-1 min-w-0 rounded-lg border border-line bg-panel px-3 py-2 text-sm focus:border-accent outline-none disabled:opacity-50"
         />
         <button
           onClick={submit}
@@ -246,7 +251,15 @@ function FormField({
   roiNote?: string | null;
 }) {
   const tm = FIELD_TYPE_META[field.type];
-  const violation = field.type === "number" ? checkLimit(field, value) : null;
+  // 数値フィールドは編集にバリデーションが追従するよう制御化する
+  // (審査員が値を書き換えたとき赤発火/解除がその場で反応する)
+  const [draft, setDraft] = useState<number | undefined>(
+    typeof value === "number" ? value : undefined,
+  );
+  useEffect(() => {
+    setDraft(typeof value === "number" ? value : undefined);
+  }, [value]);
+  const violation = field.type === "number" ? checkLimit(field, draft) : null;
 
   const input = (() => {
     switch (field.type) {
@@ -300,7 +313,11 @@ function FormField({
             <div className="flex items-center gap-2">
               <input
                 type="number"
-                defaultValue={typeof value === "number" ? value : undefined}
+                value={draft ?? ""}
+                onChange={(e) => {
+                  const n = e.target.valueAsNumber;
+                  setDraft(Number.isFinite(n) ? n : undefined);
+                }}
                 className={`w-full rounded-lg border bg-panel px-3 py-2 text-sm outline-none ${
                   violation
                     ? "border-accent text-accent font-bold"
@@ -653,7 +670,7 @@ export function SpecApp({
   return (
     <div className="flex flex-col gap-3 h-full">
       {question && question.answer === null && (
-        <QuestionCard question={question} onAnswer={onAnswer} />
+        <QuestionCard question={question} onAnswer={onAnswer} disabled={busy} />
       )}
 
       <CommandBar

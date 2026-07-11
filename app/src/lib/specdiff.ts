@@ -115,20 +115,30 @@ export function applyDiff(spec: AppSpec, diff: SpecDiff): DiffResult {
       if (diff.min !== undefined && diff.max !== undefined && diff.min > diff.max)
         return fail(spec, diff, "minがmaxを上回っています");
 
+      // 片側だけ指定されたときは既存の反対側リミットを保持し、マージ後の整合を検証する
+      const merged = (cur: { min?: number; max?: number }) => {
+        const min = diff.min ?? cur.min;
+        const max = diff.max ?? cur.max;
+        return { min, max, valid: min === undefined || max === undefined || min <= max };
+      };
       const fi = spec.fields.findIndex((f) => f.id === diff.fieldId);
       if (fi >= 0) {
         if (spec.fields[fi].type !== "number")
           return fail(spec, diff, `「${spec.fields[fi].label}」は数値項目ではありません`);
+        const m = merged(spec.fields[fi]);
+        if (!m.valid) return fail(spec, diff, "既存のリミットと矛盾します(min > max)");
         const fields = spec.fields.slice();
-        fields[fi] = { ...fields[fi], min: diff.min, max: diff.max };
+        fields[fi] = { ...fields[fi], min: m.min, max: m.max };
         return { ok: true, summary, spec: { ...spec, fields } };
       }
       const ci = spec.lineItems?.columns.findIndex((c) => c.id === diff.fieldId) ?? -1;
       if (spec.lineItems && ci >= 0) {
         if (spec.lineItems.columns[ci].type !== "number")
           return fail(spec, diff, `明細列「${spec.lineItems.columns[ci].label}」は数値列ではありません`);
+        const m = merged(spec.lineItems.columns[ci]);
+        if (!m.valid) return fail(spec, diff, "既存のリミットと矛盾します(min > max)");
         const columns = spec.lineItems.columns.slice();
-        columns[ci] = { ...columns[ci], min: diff.min, max: diff.max };
+        columns[ci] = { ...columns[ci], min: m.min, max: m.max };
         return { ok: true, summary, spec: { ...spec, lineItems: { ...spec.lineItems, columns } } };
       }
       return fail(spec, diff, `項目「${diff.fieldId}」が見つかりません`);
@@ -493,11 +503,16 @@ export function keywordFallback(spec: AppSpec, instruction: string): SpecDiff[] 
 
   if (/(上限|下限|超え|以下|以上|まで|アラート|チェック)/.test(instruction)) {
     const yen = parseYen(instruction);
-    const plain = /([0-9][0-9,.]*)/.exec(instruction.replace(/,/g, ""));
-    const num = yen ?? (plain ? parseFloat(plain[1]) : null);
+    // 円表記がない場合は「上限・下限語に隣接した数値」だけを拾う
+    // (「2段階」の2などの無関係な数字を閾値として誤認しないため)
+    const plain = /([0-9][0-9,.]*)\s*(万)?\s*(以上|以下|まで|超|未満)/.exec(
+      instruction.replace(/,/g, ""),
+    );
+    const num = yen ?? (plain ? parseFloat(plain[1]) * (plain[2] ? 10000 : 1) : null);
     const target = findNumericTarget(spec, instruction);
-    if (num !== null && target) {
-      const isMin = /(下限|以上|下回|未満.*アラート)/.test(instruction);
+    if (num !== null && Number.isFinite(num) && target) {
+      // 「N以上はアラート」はNを超える値の検知=上限。minは下限系の語彙に限定する
+      const isMin = /(下限|下回|未満)/.test(instruction);
       diffs.push(
         isMin
           ? { op: "setNumberLimit", fieldId: target, min: num }

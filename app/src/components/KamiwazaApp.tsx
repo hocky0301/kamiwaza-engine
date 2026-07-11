@@ -95,8 +95,8 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
   const [failed, setFailed] = useState(false);
   const [highlight, setHighlight] = useState<SourceBox | null>(null);
 
-  // 「日本語で書いて直す」— 適用済みパッチと手術ログ
-  const [patches, setPatches] = useState<SpecDiff[]>([]);
+  // 「日本語で書いて直す」— 適用済みパッチ(1ユーザー操作=1グループ)と手術ログ
+  const [patches, setPatches] = useState<SpecDiff[][]>([]);
   const [patchLog, setPatchLog] = useState<PatchLogEntry[]>([]);
   const [reconfBusy, setReconfBusy] = useState(false);
 
@@ -104,6 +104,13 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
   const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 最新のreconfiguredSpecを非同期処理から参照するためのref */
   const specRef = useRef<AppSpec | null>(null);
+  /**
+   * 再構成の世代カウンタ。resetStreamでインクリメントされ、
+   * 生き残った古い非同期処理(SSE購読・staggerループ)が
+   * 新しいアプリのpatches/patchLog/busyへ書き込むのを防ぐ。
+   */
+  const reconfGenRef = useRef(0);
+  const reconfAbortRef = useRef<AbortController | null>(null);
 
   const scenario = getScenario(scenarioId);
   const isUpload = uploaded !== null;
@@ -128,6 +135,10 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
     setPatches([]);
     setPatchLog([]);
     setReconfBusy(false);
+    // 進行中の再構成を無効化(世代を進め、in-flightのfetchも切る)
+    reconfGenRef.current += 1;
+    reconfAbortRef.current?.abort();
+    reconfAbortRef.current = null;
   }, []);
 
   const handleEvent = useCallback((ev: AnalyzeEvent) => {
@@ -279,9 +290,14 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
     window.scrollTo({ top: 0 });
   }, [resetStream]);
 
-  const answerQuestion = useCallback((i: number) => {
-    setQuestion((q) => (q ? { ...q, answer: i } : q));
-  }, []);
+  const answerQuestion = useCallback(
+    (i: number) => {
+      // 再構成の適用中はspecスナップショットの整合が崩れるため回答を受け付けない
+      if (reconfBusy) return;
+      setQuestion((q) => (q ? { ...q, answer: i } : q));
+    },
+    [reconfBusy],
+  );
 
   // 逆質問の回答をスペックに反映した「有効スペック」
   const effectiveSpec = useMemo(() => {
@@ -300,7 +316,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
   // applyDiffは純粋関数で、不正なopは無視して元specを返すため常に安全
   const reconfiguredSpec = useMemo(() => {
     if (!effectiveSpec) return null;
-    return patches.reduce((s, d) => applyDiff(s, d).spec, effectiveSpec);
+    return patches.flat().reduce((s, d) => applyDiff(s, d).spec, effectiveSpec);
   }, [effectiveSpec, patches]);
   specRef.current = reconfiguredSpec;
 
@@ -310,37 +326,54 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
     return [reconfiguredSpec.firstRecord, ...scenario.seedRecords];
   }, [reconfiguredSpec, mode, scenario]);
 
-  // 提案チップ(シナリオ別。ライブ写真のときは実データから決定論的に生成)
+  // 提案チップ。生成元はパッチの影響を受けないeffectiveSpecに固定し
+  // (適用のたびにチップが消えてレイアウトが跳ねるのを防ぐ)、
+  // 適用可否の判定だけを最新のreconfiguredSpecで行う
   const chips = useMemo<ChipState[]>(() => {
-    if (!reconfiguredSpec || screen !== "ready") return [];
+    if (!effectiveSpec || !reconfiguredSpec || screen !== "ready") return [];
     const base =
       mode === "live" && isUpload
-        ? genericChips(reconfiguredSpec, reconfiguredSpec.firstRecord)
+        ? genericChips(effectiveSpec, effectiveSpec.firstRecord)
         : chipsForScenario(scenarioId);
     // 全opが適用不能になったチップ(適用済み等)はグレーアウト
     return base.map((chip) => ({
       ...chip,
       disabled: !chip.ops.some((op) => applyDiff(reconfiguredSpec, op).ok),
     }));
-  }, [reconfiguredSpec, screen, mode, isUpload, scenarioId]);
+  }, [effectiveSpec, reconfiguredSpec, screen, mode, isUpload, scenarioId]);
 
-  /** opの列を1つずつ(手術ログを流しながら)適用する */
+  /**
+   * opの列を1つずつ(手術ログを流しながら)適用する。
+   * 1回の呼び出し=1グループとしてpatchesに積む(Undoは操作単位で戻る)。
+   * 世代が変わったら(リセット後)即座に打ち切り、一切書き込まない。
+   */
   const runOps = useCallback(async (ops: SpecDiff[], stagger = 300) => {
+    const gen = reconfGenRef.current;
+    let groupStarted = false;
+    const pushOp = (op: SpecDiff) => {
+      setPatches((p) =>
+        groupStarted && p.length > 0
+          ? [...p.slice(0, -1), [...p[p.length - 1], op]]
+          : [...p, [op]],
+      );
+      groupStarted = true;
+    };
     setReconfBusy(true);
     try {
       let cur = specRef.current;
       for (const op of ops) {
-        if (!cur) break;
+        if (gen !== reconfGenRef.current || !cur) return;
         const r = applyDiff(cur, op);
         setPatchLog((l) => [...l, { summary: r.summary, ok: r.ok, reason: r.reason }]);
         if (r.ok) {
           cur = r.spec;
-          setPatches((p) => [...p, op]);
+          pushOp(op);
         }
         await sleep(stagger);
+        if (gen !== reconfGenRef.current) return;
       }
     } finally {
-      setReconfBusy(false);
+      if (gen === reconfGenRef.current) setReconfBusy(false);
     }
   }, []);
 
@@ -358,6 +391,19 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
     async (text: string) => {
       const instruction = text.trim();
       if (!instruction || reconfBusy || !specRef.current) return;
+      const gen = reconfGenRef.current;
+      const ac = new AbortController();
+      reconfAbortRef.current?.abort();
+      reconfAbortRef.current = ac;
+      let groupStarted = false;
+      const pushOp = (op: SpecDiff) => {
+        setPatches((p) =>
+          groupStarted && p.length > 0
+            ? [...p.slice(0, -1), [...p[p.length - 1], op]]
+            : [...p, [op]],
+        );
+        groupStarted = true;
+      };
       setReconfBusy(true);
       setPatchLog((l) => [...l, { summary: `「${instruction}」`, ok: true, info: true }]);
       try {
@@ -365,6 +411,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ spec: specRef.current, instruction }),
+          signal: ac.signal,
         });
         if (!res.ok || !res.body) throw new Error(`reconfigure API ${res.status}`);
         const reader = res.body.getReader();
@@ -374,6 +421,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
         for (;;) {
           const { done, value } = await reader.read();
           if (done) break;
+          if (gen !== reconfGenRef.current) return; // リセット後は一切書き込まない
           buf += dec.decode(value, { stream: true });
           const parts = buf.split("\n\n");
           buf = parts.pop() ?? "";
@@ -386,6 +434,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
             } catch {
               continue;
             }
+            if (gen !== reconfGenRef.current) return;
             if (ev.type === "rphase") {
               setPatchLog((l) => [...l, { summary: ev.label, ok: true, info: true }]);
             } else if (ev.type === "patch") {
@@ -393,7 +442,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
               const r = cur ? applyDiff(cur, ev.diff) : null;
               if (ev.ok && r?.ok) {
                 cur = r.spec;
-                setPatches((p) => [...p, ev.diff]);
+                pushOp(ev.diff);
                 setPatchLog((l) => [...l, { summary: ev.summary, ok: true }]);
               } else {
                 setPatchLog((l) => [
@@ -402,12 +451,15 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
                 ]);
               }
               await sleep(220);
+              if (gen !== reconfGenRef.current) return;
             } else if (ev.type === "rerror") {
               setPatchLog((l) => [...l, { summary: ev.message, ok: false }]);
             }
           }
         }
       } catch {
+        // リセット/中断済みの旧処理はフォールバックさせない(新アプリ汚染の防止)
+        if (gen !== reconfGenRef.current || ac.signal.aborted) return;
         // ネットワーク断でも止めない: ローカルのキーワード解釈にフォールバック
         const diffs = specRef.current ? keywordFallback(specRef.current, instruction) : [];
         if (diffs.length === 0) {
@@ -420,16 +472,22 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
           await runOps(diffs);
         }
       } finally {
-        setReconfBusy(false);
+        if (gen === reconfGenRef.current) setReconfBusy(false);
+        if (reconfAbortRef.current === ac) reconfAbortRef.current = null;
       }
     },
     [reconfBusy, runOps],
   );
 
   const undoPatch = useCallback(() => {
-    setPatches((p) => (p.length ? p.slice(0, -1) : p));
-    setPatchLog((l) => [...l, { summary: "↩ 直前の変更を元に戻しました", ok: true, info: true }]);
-  }, []);
+    if (reconfBusy || patches.length === 0) return;
+    const n = patches[patches.length - 1].length;
+    setPatches((p) => p.slice(0, -1));
+    setPatchLog((l) => [
+      ...l,
+      { summary: `↩ 直前の変更を元に戻しました(${n}件の操作)`, ok: true, info: true },
+    ]);
+  }, [reconfBusy, patches]);
 
   /* ---------------- 画面 ---------------- */
 
