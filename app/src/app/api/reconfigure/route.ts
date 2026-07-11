@@ -30,7 +30,8 @@ const SYSTEM_PROMPT = `あなたは「カミワザ」の再構成エージェン
 - 1つの指示に複数の変更が含まれる場合は、ツールを複数回呼ぶ(例:「承認を2段階にして単価に上限を」→ add_approval_step と set_number_limit)
 - 金額の「万円」は円に換算する(1万円 = 10000)
 - fieldIdは必ずツール定義のenumから選ぶ
-- テキストでの説明は不要。ツール呼び出しのみ`;
+- 変更指示として解釈できない入力(挨拶・感想・質問など)にはツールを呼ばず、短くその旨だけ返す
+- 変更指示の場合、テキストでの説明は不要。ツール呼び出しのみ`;
 
 function sseLine(ev: ReconfigureEvent): string {
   return `data: ${JSON.stringify(ev)}\n\n`;
@@ -62,7 +63,8 @@ async function liveInterpret(spec: AppSpec, instruction: string): Promise<SpecDi
         description: t.description,
         input_schema: t.input_schema as Anthropic.Tool["input_schema"],
       })),
-      tool_choice: { type: "any" },
+      // auto: 変更意図がない入力ではツールを呼ばせない(diffs空→呼び出し元でフォールバック/エラー表示)
+      tool_choice: { type: "auto" },
       messages: [
         {
           role: "user",
