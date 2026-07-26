@@ -649,6 +649,31 @@ const SCENARIO_CHIPS: Record<string, CommandChip[]> = {
       ops: [{ op: "addAggregation", label: "平均本体温度", fieldId: "temperature", agg: "avg", unit: "℃" }],
     },
   ],
+  hacchusho: [
+    {
+      id: "big-po-check",
+      label: "30万円超の発注は経理部確認に",
+      ops: [
+        { op: "addApprovalStep", name: "経理部確認", role: "経理部" },
+        { op: "setNumberLimit", fieldId: "total", max: 300000 },
+      ],
+    },
+    {
+      id: "list-area",
+      label: "一覧に施策エリアを表示",
+      ops: [{ op: "addFilterColumn", fieldId: "area" }],
+    },
+    {
+      id: "acceptance-notice",
+      label: "検収連絡日の項目を追加",
+      ops: [{ op: "addField", id: "acceptance_notice", label: "検収連絡日", fieldType: "date" }],
+    },
+    {
+      id: "avg-po",
+      label: "平均発注額を集計",
+      ops: [{ op: "addAggregation", label: "平均発注額", fieldId: "total", agg: "avg", unit: "円" }],
+    },
+  ],
 };
 
 export function chipsForScenario(scenarioId: string): CommandChip[] {

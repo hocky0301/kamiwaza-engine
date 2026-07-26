@@ -553,6 +553,174 @@ const seikyuSeeds: AppRecord[] = [
 ];
 
 /* ============================================================
+ * シナリオ5: 発注書
+ * 大企業の部門購買で使われる「購買システム印字の標準様式発注書」に準拠。
+ * 様式管理ブロック・7欄の発注内容・固定行罫線+「以下余白」・
+ * 課税/非課税の5行合計ブロックという実様式の記号を再現。
+ * 手書き要素ゼロ、色は発注元社名に重ね押しされた赤角印のみ。
+ * ============================================================ */
+
+const hacchushoPaper: PaperElement[] = [
+  // 様式管理ブロック(右上・英語3行=「システムから出てくる紙」の記号)
+  { kind: "printed", x: 60, y: 1.8, w: 36, h: 1.6, text: "Administration ID: MK-F0208", size: 1.2, align: "right" },
+  { kind: "printed", x: 60, y: 3.5, w: 36, h: 1.6, text: "Ver. 3.1  Effective Date: 2025-10-01", size: 1.2, align: "right" },
+  { kind: "printed", x: 60, y: 5.2, w: 36, h: 1.6, text: "Organizational Unit-in-charge: Accounting Dept.", size: 1.2, align: "right" },
+  // 発行日・発注No.
+  { fieldId: "issue_date", kind: "printed", x: 58, y: 8.9, w: 38, h: 2.4, text: "発行日: 2026年7月28日", size: 1.8, align: "right" },
+  { fieldId: "po_no", kind: "printed", x: 56, y: 11.8, w: 40, h: 2.8, text: "発注No. M400012857-01", size: 2.0, align: "right", bold: true },
+  // 表題
+  { kind: "printed", x: 30, y: 14.8, w: 40, h: 4.5, text: "発 注 書", size: 4.2, align: "center", bold: true },
+  { kind: "line", x: 36, y: 19.6, w: 28, h: 0.18 },
+  // 宛先(左)
+  { fieldId: "supplier", kind: "printed", x: 5, y: 20.8, w: 46, h: 3.2, text: "カワセミ印刷株式会社  御中", size: 2.4, bold: true },
+  { kind: "line", x: 5, y: 24.6, w: 46, h: 0.15 },
+  // 発注元ブロック(右)+ 赤角印を社名に重ね押し
+  { kind: "printed", x: 56, y: 20.8, w: 40, h: 2.6, text: "ペンギン食品株式会社", size: 2.1, bold: true },
+  { kind: "printed", x: 56, y: 23.3, w: 40, h: 2.0, text: "マーケティング本部 エリア推進部", size: 1.5 },
+  { kind: "printed", x: 56, y: 25.2, w: 40, h: 1.9, text: "〒000-0005 埼玉県架空市桜木2-4-6", size: 1.4 },
+  { kind: "printed", x: 56, y: 27.0, w: 40, h: 1.9, text: "TEL: 030-5550-0130", size: 1.4 },
+  { fieldId: "company_seal", kind: "stamp", square: true, x: 88, y: 19.8, w: 6.5, h: 5.0, text: "富士見", rotate: -2 },
+  // 前文
+  { fieldId: "quote_no", kind: "printed", x: 5, y: 29.6, w: 90, h: 2.6, text: "2026年7月21日付見積書「J-0718-24」および以下の内容に基づき、貴社に対し発注させていただきます。", size: 1.5 },
+  // ■発注内容(7欄・実様式忠実)
+  { kind: "printed", x: 4, y: 32.9, w: 30, h: 2.2, text: "■ 発注内容", size: 2.0, bold: true },
+  { kind: "box", x: 4, y: 35.5, w: 92, h: 24.5 },
+  { kind: "line", x: 24, y: 35.5, w: 0.15, h: 24.5 },
+  { kind: "line", x: 4, y: 39.0, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 42.5, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 46.0, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 49.5, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 53.0, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 56.5, w: 92, h: 0.12 },
+  { kind: "printed", x: 5.5, y: 36.2, w: 17, h: 2, text: "給付内容", size: 1.5 },
+  { fieldId: "project", kind: "printed", x: 25.5, y: 36.2, w: 69, h: 2, text: "秋季新商品「彩り果実ソーダ」告知チラシ 印刷・ポスティング業務(大宮エリア)", size: 1.45 },
+  { kind: "printed", x: 5.5, y: 39.7, w: 17, h: 2, text: "納期・業務期間", size: 1.5 },
+  { kind: "printed", x: 25.5, y: 39.7, w: 69, h: 2, text: "2026年9月1日 〜 2026年9月30日", size: 1.6 },
+  { kind: "printed", x: 5.5, y: 43.2, w: 17, h: 2, text: "納入場所", size: 1.5 },
+  { fieldId: "area", kind: "printed", x: 25.5, y: 43.2, w: 69, h: 2, text: "発注者指定の配布エリア(架空市中央ほか)", size: 1.5 },
+  { kind: "printed", x: 5.5, y: 46.7, w: 17, h: 2, text: "検収完了日", size: 1.5 },
+  { fieldId: "acceptance_date", kind: "printed", x: 25.5, y: 46.7, w: 69, h: 2, text: "2026年9月30日", size: 1.6 },
+  { kind: "printed", x: 5.5, y: 50.2, w: 17, h: 2, text: "支払予定日", size: 1.5 },
+  { fieldId: "payment_terms", kind: "printed", x: 25.5, y: 50.2, w: 69, h: 2, text: "検収完了月の翌月25日払い(下請代金支払遅延等防止法適用時は受領後60日以内)", size: 1.3 },
+  { kind: "printed", x: 5.5, y: 53.7, w: 17, h: 2, text: "支払方法", size: 1.5 },
+  { kind: "printed", x: 25.5, y: 53.7, w: 69, h: 2, text: "銀行振込(振込手数料は当社負担)", size: 1.5 },
+  { kind: "printed", x: 5.5, y: 57.2, w: 17, h: 2, text: "備考", size: 1.5 },
+  { kind: "printed", x: 25.5, y: 57.2, w: 69, h: 2, text: "配布完了報告書をもって検収とする", size: 1.5 },
+  // ■発注明細(データ2行+空行にも罫線+以下余白)
+  { kind: "printed", x: 4, y: 61.0, w: 30, h: 2.2, text: "■ 発注明細", size: 2.0, bold: true },
+  { kind: "box", x: 4, y: 63.5, w: 92, h: 17.5 },
+  { kind: "line", x: 52, y: 63.5, w: 0.15, h: 17.5 },
+  { kind: "line", x: 63, y: 63.5, w: 0.15, h: 17.5 },
+  { kind: "line", x: 73, y: 63.5, w: 0.15, h: 17.5 },
+  { kind: "line", x: 84, y: 63.5, w: 0.15, h: 17.5 },
+  { kind: "line", x: 4, y: 66.5, w: 92, h: 0.15 },
+  { kind: "printed", x: 4, y: 64.4, w: 48, h: 1.8, text: "項  目", size: 1.5, align: "center" },
+  { kind: "printed", x: 52, y: 64.4, w: 11, h: 1.8, text: "数量(単位)", size: 1.4, align: "center" },
+  { kind: "printed", x: 63, y: 64.4, w: 10, h: 1.8, text: "単価(JPY)", size: 1.4, align: "center" },
+  { kind: "printed", x: 73, y: 64.4, w: 11, h: 1.8, text: "金額(JPY)", size: 1.4, align: "center" },
+  { kind: "printed", x: 84, y: 64.4, w: 12, h: 1.8, text: "備考", size: 1.4, align: "center" },
+  { kind: "line", x: 4, y: 69.4, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 72.3, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 75.2, w: 92, h: 0.12 },
+  { kind: "line", x: 4, y: 78.1, w: 92, h: 0.12 },
+  { fieldId: "items", kind: "printed", x: 5, y: 67.3, w: 46, h: 2, text: "0001_秋季新商品「彩り果実ソーダ」告知チラシ A4両面 印刷", size: 1.3 },
+  { fieldId: "items", kind: "printed", x: 52.5, y: 67.3, w: 10, h: 2, text: "50,000(枚)", size: 1.4, align: "right" },
+  { fieldId: "items", kind: "printed", x: 63.5, y: 67.3, w: 9, h: 2, text: "4.20", size: 1.4, align: "right" },
+  { fieldId: "items", kind: "printed", x: 73.5, y: 67.3, w: 10, h: 2, text: "210,000", size: 1.4, align: "right" },
+  { fieldId: "items", kind: "printed", x: 84.3, y: 67.3, w: 11.4, h: 2, text: "FSK0002216034_01", size: 1.1 },
+  { fieldId: "items", kind: "printed", x: 5, y: 70.2, w: 46, h: 2, text: "0002_ポスティング配布業務(大宮エリア)", size: 1.3 },
+  { fieldId: "items", kind: "printed", x: 52.5, y: 70.2, w: 10, h: 2, text: "50,000(部)", size: 1.4, align: "right" },
+  { fieldId: "items", kind: "printed", x: 63.5, y: 70.2, w: 9, h: 2, text: "1.80", size: 1.4, align: "right" },
+  { fieldId: "items", kind: "printed", x: 73.5, y: 70.2, w: 10, h: 2, text: "90,000", size: 1.4, align: "right" },
+  { fieldId: "items", kind: "printed", x: 84.3, y: 70.2, w: 11.4, h: 2, text: "FSK0002216034_02", size: 1.1 },
+  { kind: "printed", x: 35, y: 73.4, w: 30, h: 2.2, text: "以 下 余 白", size: 1.5, align: "center" },
+  // 合計ブロック(右下5行・課税/非課税の実様式)
+  { kind: "box", x: 58, y: 82, w: 38, h: 12.5 },
+  { kind: "line", x: 58, y: 84.5, w: 38, h: 0.12 },
+  { kind: "line", x: 58, y: 87.0, w: 38, h: 0.12 },
+  { kind: "line", x: 58, y: 89.5, w: 38, h: 0.12 },
+  { kind: "line", x: 58, y: 92.0, w: 38, h: 0.12 },
+  { kind: "printed", x: 59.5, y: 82.7, w: 20, h: 1.8, text: "小計", size: 1.4 },
+  { kind: "printed", x: 77, y: 82.7, w: 17.5, h: 1.8, text: "300,000", size: 1.5, align: "right" },
+  { kind: "printed", x: 59.5, y: 85.2, w: 20, h: 1.8, text: "消費税(10%)", size: 1.4 },
+  { kind: "printed", x: 77, y: 85.2, w: 17.5, h: 1.8, text: "30,000", size: 1.5, align: "right" },
+  { kind: "printed", x: 59.5, y: 87.7, w: 20, h: 1.8, text: "1.合計金額(課税分)", size: 1.3 },
+  { kind: "printed", x: 77, y: 87.7, w: 17.5, h: 1.8, text: "330,000", size: 1.5, align: "right" },
+  { kind: "printed", x: 59.5, y: 90.2, w: 20, h: 1.8, text: "2.合計金額(非課税分)", size: 1.3 },
+  { kind: "printed", x: 77, y: 90.2, w: 17.5, h: 1.8, text: "0", size: 1.5, align: "right" },
+  { kind: "printed", x: 59.5, y: 92.3, w: 20, h: 2.2, text: "総合計(1+2)", size: 1.5, bold: true },
+  { fieldId: "total", kind: "printed", x: 75, y: 92.1, w: 19.5, h: 2.4, text: "¥330,000", size: 2.0, align: "right", bold: true },
+  // フッター
+  { kind: "printed", x: 40, y: 96.8, w: 20, h: 2, text: "1 / 1", size: 1.4, align: "center" },
+];
+
+const hacchushoSpec: AppSpec = {
+  appName: "発注台帳",
+  icon: "🗂️",
+  description: "部門で発行する発注書と検収・支払月を台帳で一元管理する業務",
+  fields: [
+    { id: "issue_date", label: "発行日", type: "date", required: true, confidence: 0.98, sourceBox: { x: 57, y: 8.6, w: 40, h: 2.9 } },
+    { id: "po_no", label: "発注No.", type: "text", required: true, confidence: 0.97, sourceBox: { x: 55, y: 11.5, w: 42, h: 3.4 } },
+    { id: "supplier", label: "発注先", type: "text", required: true, confidence: 0.96, sourceBox: { x: 4, y: 20.2, w: 48, h: 5.2 } },
+    { id: "quote_no", label: "見積書番号", type: "text", required: false, confidence: 0.9, sourceBox: { x: 4, y: 29.2, w: 92, h: 3.4 } },
+    { id: "project", label: "給付内容(案件名)", type: "text", required: true, confidence: 0.93, sourceBox: { x: 3.5, y: 35.2, w: 93, h: 3.6 } },
+    // categoryのsourceBoxはprojectと同じ「給付内容」セルに意図的にネスト(同一セルからAIが分類するデモ)
+    { id: "category", label: "施策カテゴリ", type: "select", required: true, options: ["ポスティング", "OOH", "SNS", "サンプリング", "イベント", "その他"], confidence: 0.84, sourceBox: { x: 24.5, y: 35.6, w: 71.5, h: 3.0 } },
+    { id: "area", label: "施策エリア", type: "select", required: true, options: ["北日本", "東日本", "中日本", "関西", "西日本"], confidence: 0.86, sourceBox: { x: 24.5, y: 42.7, w: 71.5, h: 3.1 } },
+    { id: "acceptance_date", label: "検収完了日", type: "date", required: true, confidence: 0.92, sourceBox: { x: 3.5, y: 46.1, w: 93, h: 3.2 } },
+    { id: "payment_terms", label: "支払条件", type: "select", required: true, options: ["検収完了月の当月末日払い", "検収完了月の翌月25日払い"], confidence: 0.88, sourceBox: { x: 3.5, y: 49.6, w: 93, h: 3.2 } },
+    { id: "total", label: "総合計", type: "number", required: true, unit: "円", confidence: 0.97, sourceBox: { x: 57, y: 91.6, w: 40, h: 3.6 } },
+    { id: "company_seal", label: "社印(押印決裁)", type: "stamp", required: false, confidence: 0.6, sourceBox: { x: 84, y: 18.8, w: 13, h: 7.4 } },
+  ],
+  lineItems: {
+    label: "発注明細",
+    columns: [
+      { id: "item", label: "項目", type: "text" },
+      { id: "qty", label: "数量", type: "number" },
+      { id: "unit", label: "単位", type: "text" },
+      { id: "unit_price", label: "単価", type: "number", unit: "円" },
+      { id: "amount", label: "金額", type: "number", unit: "円" },
+      { id: "ref_no", label: "社内参照No.", type: "text" },
+    ],
+    sourceBox: { x: 3.5, y: 63.0, w: 93, h: 18.5 },
+  },
+  listColumns: ["issue_date", "supplier", "project", "total"],
+  approvalFlow: [
+    { name: "起票", role: "施策担当" },
+    { name: "押印決裁", role: "部長" },
+  ],
+  aggregations: [
+    { id: "po_sum", label: "今月の発注金額", fieldId: "total", op: "sum", unit: "円" },
+    { id: "po_count", label: "今月の発注件数", fieldId: "total", op: "count", unit: "件" },
+  ],
+  firstRecord: {
+    issue_date: "2026-07-28",
+    po_no: "M400012857-01",
+    supplier: "カワセミ印刷株式会社",
+    quote_no: "J-0718-24",
+    project: "秋季新商品「彩り果実ソーダ」告知チラシ 印刷・ポスティング業務(大宮エリア)",
+    category: "ポスティング",
+    area: "東日本",
+    acceptance_date: "2026-09-30",
+    payment_terms: "検収完了月の翌月25日払い",
+    total: 330000,
+    company_seal: true,
+  },
+  firstRecordLines: [
+    { item: "0001_秋季新商品「彩り果実ソーダ」告知チラシ A4両面 印刷", qty: 50000, unit: "枚", unit_price: 4.2, amount: 210000, ref_no: "FSK0002216034_01" },
+    { item: "0002_ポスティング配布業務(大宮エリア)", qty: 50000, unit: "部", unit_price: 1.8, amount: 90000, ref_no: "FSK0002216034_02" },
+  ],
+};
+
+const hacchushoSeeds: AppRecord[] = [
+  { issue_date: "2026-07-27", po_no: "M400012840-01", supplier: "株式会社 マンボウ商事", quote_no: "S-0715-09", project: "夏祭りサンプリングイベント運営(浦和会場)", category: "イベント", area: "東日本", acceptance_date: "2026-08-31", payment_terms: "検収完了月の翌月25日払い", total: 880000, company_seal: true },
+  { issue_date: "2026-07-22", po_no: "M400012811-01", supplier: "カワセミ印刷株式会社", quote_no: "J-0712-08", project: "秋季新商品告知チラシ 印刷・ポスティング(川口エリア)", category: "ポスティング", area: "東日本", acceptance_date: "2026-09-30", payment_terms: "検収完了月の翌月25日払い", total: 297000, company_seal: true },
+  { issue_date: "2026-07-21", po_no: "M400012798-01", supplier: "株式会社 大宮アドセンター", quote_no: "A-0710-31", project: "駅構内ポスターB1 掲出(8月分・大宮駅)", category: "OOH", area: "東日本", acceptance_date: "2026-08-31", payment_terms: "検収完了月の当月末日払い", total: 440000, company_seal: true },
+  { issue_date: "2026-07-17", po_no: "M400012766-01", supplier: "ミナト商事株式会社", quote_no: "M-0708-02", project: "サンプリング用ノベルティ(ウェットティッシュ)調達", category: "サンプリング", area: "関西", acceptance_date: "2026-08-29", payment_terms: "検収完了月の当月末日払い", total: 132000, company_seal: true },
+  { issue_date: "2026-07-15", po_no: "M400012750-01", supplier: "カワセミ印刷株式会社", quote_no: "J-0705-11", project: "店頭POP 増刷(中日本 8月分)", category: "その他", area: "中日本", acceptance_date: "2026-08-31", payment_terms: "検収完了月の翌月25日払い", total: 96800, company_seal: false },
+];
+
+/* ============================================================
  * エクスポート
  * ============================================================ */
 
@@ -617,6 +785,24 @@ export const SCENARIOS: Scenario[] = [
     alert:
       "コンプレッサー3号機の吐出圧力が3回連続で基準値(0.60 MPa)を超えています(0.62 → 0.63 → 0.65 と上昇傾向)。点検メモの「針が振れ気味」という記載と併せて、早期の部品交換を推奨します。",
     question: null,
+  },
+  {
+    id: "hacchusho",
+    label: "発注書",
+    paperKind: "購買システム印字の標準様式発注書(大企業の部門購買)",
+    paper: hacchushoPaper,
+    spec: hacchushoSpec,
+    seedRecords: hacchushoSeeds,
+    alert:
+      "今月の発注は6件・合計 ¥2,175,800。うち「株式会社 マンボウ商事」のイベント運営費 ¥880,000 が1件で全体の40%を占めています。検収予定日から逆算すると、支払は 9月25日に ¥976,800、10月25日に ¥627,000 が集中します。また「店頭POP 増刷(中日本 8月分)」¥96,800 が押印未完了のままです。",
+    question: {
+      fieldId: "company_seal",
+      question:
+        "発注元の社名に重ねて赤の角印(会社印)を検出しました(信頼度 60%)。発注書の発行前に部長の押印決裁ステップが必要ですか?",
+      choices: ["はい、押印決裁をフローに含める", "いいえ、記録だけでよい"],
+    },
+    validationNote:
+      "検算OK: 50,000枚×@4.20 = 210,000、50,000部×@1.80 = 90,000、小計 300,000 + 消費税 30,000 = 総合計 ¥330,000 ✓(非課税分 0円)",
   },
 ];
 
