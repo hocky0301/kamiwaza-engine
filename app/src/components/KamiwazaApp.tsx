@@ -493,29 +493,33 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
   /* ---------------- 画面 ---------------- */
 
   const header = (
-    <header className="flex items-center gap-3 px-6 py-4 border-b border-line">
+    <header className="flex items-center gap-3 px-4 sm:px-6 py-4 border-b border-line">
       <button
         onClick={backToSelect}
-        className="flex items-center gap-2.5 cursor-pointer"
+        className="flex items-center gap-2 sm:gap-2.5 cursor-pointer shrink-0"
         title="トップに戻る"
       >
-        <span className="inline-flex items-center justify-center w-9 h-9 rounded-full border-2 border-accent text-accent font-serif font-bold text-lg -rotate-6">
+        <span className="inline-flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full border-2 border-accent text-accent font-serif font-bold text-base sm:text-lg -rotate-6 shrink-0">
           紙
         </span>
-        <span className="font-bold text-lg tracking-wide">カミワザ</span>
+        <span className="font-bold text-base sm:text-lg tracking-wide whitespace-nowrap">
+          カミワザ
+        </span>
         <span className="text-dim text-xs hidden sm:inline">Paper-to-App Engine</span>
       </button>
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-2 shrink-0">
         {screen !== "select" && (
           <button
             onClick={backToSelect}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer"
+            className="rounded-lg border border-line px-3 py-1.5 text-sm text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
-            ← 別の紙を試す
+            {/* モバイルは横幅が足りないので短縮ラベル(意味は同じ) */}
+            <span className="sm:hidden">← 別の紙</span>
+            <span className="hidden sm:inline">← 別の紙を試す</span>
           </button>
         )}
         <span
-          className={`text-[11px] rounded-full px-3 py-1 font-bold ${
+          className={`text-[11px] rounded-full px-3 py-1 font-bold whitespace-nowrap shrink-0 ${
             liveAvailable ? "bg-ok/15 text-ok" : "bg-accent-soft text-accent"
           }`}
           title={
@@ -590,6 +594,9 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
               <input
                 type="file"
                 accept="image/*"
+                // モバイルでは背面カメラが直接起動する(その場で紙を撮る動線)。
+                // デスクトップのブラウザはcaptureを無視し、通常のファイル選択のまま
+                capture="environment"
                 className="hidden"
                 disabled={!liveAvailable}
                 onChange={(e) => {
@@ -641,8 +648,10 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
           )}
         </div>
 
-        {/* 右: ビルド or アプリ */}
-        <div className="min-h-[70vh] md:h-[calc(100vh-7.5rem)] flex flex-col">
+        {/* 右: ビルド or アプリ。
+            min-w-0 がないとグリッド項目の min-width:auto が中身の最小幅まで広がり、
+            タブレット幅(768px前後)でページ全体が横スクロールして右端が切れる */}
+        <div className="min-w-0 min-h-[70vh] md:h-[calc(100vh-7.5rem)] flex flex-col">
           {error && (
             <div className="card border-accent/60 bg-accent-soft p-4 mb-3 text-sm">
               ⚠ {error}
