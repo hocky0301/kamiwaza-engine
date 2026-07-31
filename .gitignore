@@ -19,3 +19,6 @@ docs_private/
 
 # Officeの一時ロックファイル
 ~$*
+
+# ピッチ機械チェックの抽出結果(pitch/check_deck.py)
+pitch/.check_out/
