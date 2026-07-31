@@ -6,6 +6,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { AppSpec } from "@/lib/appspec";
+import { payloadTooLarge, readJsonLimited } from "@/lib/http";
 import {
   applyDiffs,
   buildReconfigureTools,
@@ -84,9 +85,25 @@ async function liveInterpret(spec: AppSpec, instruction: string): Promise<SpecDi
   return diffs;
 }
 
+/**
+ * ボディ上限。spec+instruction はどちらもそのままモデルへのプロンプトになるため、
+ * ここが開いていると1リクエストで任意量のトークンを焼ける。
+ * 実測の最大シナリオでも spec JSON は約3KB なので 256KB は80倍の余裕がある。
+ */
+const MAX_BODY_BYTES = 256 * 1024;
+/** 自由文指示の上限。デモの指示は数十文字で、2000字は口頭指示として十分な余裕 */
+const MAX_INSTRUCTION_CHARS = 2000;
+
 export async function POST(req: Request) {
-  const body: ReconfigureRequest | null = await req.json().catch(() => null);
-  if (!body?.spec || typeof body.instruction !== "string" || !body.instruction.trim()) {
+  const parsed = await readJsonLimited<ReconfigureRequest>(req, MAX_BODY_BYTES);
+  if (!parsed.ok && parsed.reason === "too-large") return payloadTooLarge();
+  const body: ReconfigureRequest | null = parsed.ok ? parsed.body : null;
+  if (
+    !body?.spec ||
+    typeof body.instruction !== "string" ||
+    !body.instruction.trim() ||
+    body.instruction.length > MAX_INSTRUCTION_CHARS
+  ) {
     return new Response(JSON.stringify({ error: "spec and instruction required" }), {
       status: 400,
       headers: { "Content-Type": "application/json" },

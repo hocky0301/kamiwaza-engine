@@ -6,6 +6,7 @@ import { buildDemoSequence } from "@/lib/demo";
 import { getScenario } from "@/lib/scenarios";
 import { streamLiveAnalysis } from "@/lib/claude-live";
 import { sseLine, type AnalyzeEvent } from "@/lib/events";
+import { payloadTooLarge, readJsonLimited } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,10 +16,25 @@ interface AnalyzeRequest {
   image?: { data: string; mediaType: string };
 }
 
+/**
+ * ボディ上限。クライアントは長辺1600pxのJPEG(q0.85)に縮小して送るため
+ * 実際のライブ解析ペイロードは概ね1MB前後、Anthropic APIの画像上限も5MB。
+ * 12MB は十分な余裕を残しつつ、未認証POSTでメモリを焼く経路を閉じる値。
+ */
+const MAX_BODY_BYTES = 12 * 1024 * 1024;
+/** base64画像の上限(APIの5MB制限に対しても余裕を持たせた値) */
+const MAX_IMAGE_BASE64 = 8 * 1024 * 1024;
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function POST(req: Request) {
-  const body: AnalyzeRequest = await req.json().catch(() => ({}));
+  const parsed = await readJsonLimited<AnalyzeRequest>(req, MAX_BODY_BYTES);
+  if (!parsed.ok && parsed.reason === "too-large") return payloadTooLarge();
+  // 不正JSONは従来どおりデモへフォールバックする(挙動を変えない)
+  const body: AnalyzeRequest = parsed.ok ? (parsed.body ?? {}) : {};
+  if (body.image && (body.image.data?.length ?? 0) > MAX_IMAGE_BASE64) {
+    return payloadTooLarge();
+  }
   const hasKey = !!process.env.ANTHROPIC_API_KEY;
   const useLive = hasKey && !!body.image?.data;
 

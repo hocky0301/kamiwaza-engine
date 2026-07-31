@@ -147,20 +147,23 @@ function CommandBar({
 
   return (
     <div className="card p-3.5">
-      <div className="flex items-center gap-2">
-        <span className="text-base shrink-0">🗣️</span>
-        <input
-          type="text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            // SafariはIME確定EnterでisComposing=falseのままkeyCode=229を報告する
-            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) submit();
-          }}
-          disabled={busy}
-          placeholder="このアプリに日本語で指示…(例: 承認を2段階にして、単価に上限チェックを)"
-          className="flex-1 min-w-0 rounded-lg border border-line bg-panel px-3 py-2 text-sm focus:border-accent outline-none disabled:opacity-50"
-        />
+      {/* モバイルでは入力欄が1行を占め、ボタンは次の行へ折り返す(sm以上は従来どおり1行) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-1 min-w-0">
+          <span className="text-base shrink-0">🗣️</span>
+          <input
+            type="text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              // SafariはIME確定EnterでisComposing=falseのままkeyCode=229を報告する
+              if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) submit();
+            }}
+            disabled={busy}
+            placeholder="このアプリに日本語で指示…(例: 承認を2段階にして、単価に上限チェックを)"
+            className="flex-1 min-w-0 rounded-lg border border-line bg-panel px-3 py-2 text-sm focus:border-accent outline-none disabled:opacity-50"
+          />
+        </div>
         <button
           onClick={submit}
           disabled={busy || !text.trim()}
@@ -604,7 +607,21 @@ function LineItemsTable({
 
 /* ---------- CSV ---------- */
 
-const csvEsc = (s: string) => `"${s.replace(/"/g, '""').replace(/\n/g, " ")}"`;
+/**
+ * CSVインジェクション(数式インジェクション)対策。
+ * ラベルも値も紙の写真をLLMが読んだ結果なので、紙に `=HYPERLINK(...)` と
+ * 書いておくだけで、書き出したCSVをExcelで開いた瞬間に数式として評価されうる。
+ * ダブルクォートで囲っても Excel は数式解釈するため、先頭に `'` を付けて無害化する。
+ * ただし数値リテラル(負数・小数を含む)はそのまま通す — 書き出したCSVで
+ * 金額や温度が文字列化してしまうと業務側の集計が壊れるため。
+ * 全5シナリオの書き出し結果がこの変更前後でバイト単位一致することを確認済み。
+ */
+const NUMERIC_LITERAL = /^-?\d+(\.\d+)?$/;
+
+const csvEsc = (s: string) => {
+  const safe = /^[=+\-@\t\r]/.test(s) && !NUMERIC_LITERAL.test(s) ? `'${s}` : s;
+  return `"${safe.replace(/"/g, '""').replace(/\n/g, " ")}"`;
+};
 
 function downloadBlob(csv: string, filename: string) {
   // 先頭のBOMでExcelにUTF-8と認識させる(日本語の文字化け防止)
@@ -718,13 +735,13 @@ export function SpecApp({
           </div>
         )}
 
-        {/* タブ */}
-        <div className="flex border-b border-line px-3">
+        {/* タブ — モバイルでは全部を1行に置けないので横スクロール(縦には絶対に折り返さない) */}
+        <div className="flex border-b border-line px-3 overflow-x-auto overflow-y-hidden">
           {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                 tab === t.id
                   ? "border-accent text-fg"
                   : "border-transparent text-dim hover:text-fg"
@@ -735,7 +752,7 @@ export function SpecApp({
           ))}
           <button
             onClick={() => downloadCsv(spec, records)}
-            className="ml-auto my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer"
+            className="ml-auto my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0"
             title="Excelで開けるCSVを書き出し"
           >
             ⬇ CSV
@@ -743,7 +760,7 @@ export function SpecApp({
           {spec.lineItems && spec.firstRecordLines.length > 0 && (
             <button
               onClick={() => downloadLinesCsv(spec)}
-              className="ml-2 my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer"
+              className="ml-2 my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0"
               title="明細行をCSVで書き出し"
             >
               ⬇ 明細CSV
@@ -776,13 +793,15 @@ export function SpecApp({
             </div>
           </div>
 
-          <div hidden={tab !== "list"}>
+          {/* 一覧 — 列が増えるとモバイル幅を必ず超えるので、テーブルだけ横スクロールさせる。
+              whitespace-nowrap がないと1文字ずつ縦積みになって読めなくなる */}
+          <div hidden={tab !== "list"} className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-dim text-xs border-b border-line">
                   <th className="px-4 py-2.5 w-12"></th>
                   {spec.listColumns.map((cid) => (
-                    <th key={cid} className="px-4 py-2.5 font-medium">
+                    <th key={cid} className="px-4 py-2.5 font-medium whitespace-nowrap">
                       {spec.fields.find((f) => f.id === cid)?.label ?? cid}
                     </th>
                   ))}
@@ -802,7 +821,7 @@ export function SpecApp({
                       )}
                     </td>
                     {spec.listColumns.map((cid) => (
-                      <td key={cid} className="px-4 py-2.5">
+                      <td key={cid} className="px-4 py-2.5 whitespace-nowrap">
                         {fmtValue(
                           spec.fields.find((f) => f.id === cid),
                           r[cid],
@@ -819,9 +838,10 @@ export function SpecApp({
             <div className="p-5 flex flex-col gap-4">
               <div className="grid grid-cols-2 gap-3">
                 {spec.aggregations.map((a) => (
-                  <div key={a.id} className="card p-4">
+                  <div key={a.id} className="card p-3 sm:p-4">
                     <div className="text-xs text-dim mb-1">{a.label}</div>
-                    <div className="text-2xl font-bold tracking-tight">
+                    {/* 桁数の多い金額がモバイルの半幅タイルからはみ出さないよう1段落とす */}
+                    <div className="text-xl sm:text-2xl font-bold tracking-tight break-words">
                       {computeAgg(spec, records, a.id)}
                     </div>
                   </div>
