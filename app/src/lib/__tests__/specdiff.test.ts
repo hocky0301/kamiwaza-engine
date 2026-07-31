@@ -21,6 +21,7 @@ import {
   genericChips,
   type SpecDiff,
   type DiffResult,
+  type CommandChip,
 } from "../specdiff";
 import { SCENARIOS, getScenario } from "../scenarios";
 
@@ -184,6 +185,71 @@ describe("applyDiff / setNumberLimit", () => {
     expect(neg.ok).toBe(true);
     expect(findField(neg.spec, "total")?.min).toBe(-100);
   });
+
+  /* --- 同値の再適用 = 変化なし = 失敗(チップのグレーアウトはこの上に乗っている) --- */
+
+  it("同じリミットの再設定は拒否され、元の spec が同一参照で返る(fields経路)", () => {
+    const once = applyDiff(makeSpec(), { op: "setNumberLimit", fieldId: "total", max: 100000 }).spec;
+    const r = applyDiff(once, { op: "setNumberLimit", fieldId: "total", max: 100000 });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("「合計金額」には既に同じリミットが設定されています");
+    // 「既に〜」は重複拒否4種と同じ体裁。読み手が1秒で意味を取れる文言に揃えてある
+    expect(Object.is(r.spec, once)).toBe(true);
+    expect(findField(r.spec, "total")?.max).toBe(100000); // 既存値は壊れない
+  });
+
+  it("同じリミットの再設定は拒否される(明細列経路・プレフィックス付き)", () => {
+    const once = applyDiff(makeSpec(), { op: "setNumberLimit", fieldId: "unit_price", max: 200 }).spec;
+    const r = applyDiff(once, { op: "setNumberLimit", fieldId: "unit_price", max: 200 });
+
+    expect(r.ok).toBe(false);
+    // 明細列であることが分かる文言(fields 側と同じ文だと、どこを見ればいいか分からない)
+    expect(r.reason).toBe("明細列「単価」には既に同じリミットが設定されています");
+    expect(Object.is(r.spec, once)).toBe(true);
+  });
+
+  it("片側が同値でも、もう片側が新規なら成功する", () => {
+    // 「上限はそのまま、下限だけ足して」が拒否されると会話が詰まる
+    const once = applyDiff(makeSpec(), { op: "setNumberLimit", fieldId: "total", max: 100 }).spec;
+    const r = applyDiff(once, { op: "setNumberLimit", fieldId: "total", min: 10, max: 100 });
+
+    expect(r.ok).toBe(true);
+    expect(findField(r.spec, "total")).toMatchObject({ min: 10, max: 100 });
+  });
+
+  it("片側だけ渡してもマージ後が既存と同じなら拒否する", () => {
+    // 判定はマージ後の (min,max) で行う。diff に載っていない側を「変化」と数えない。
+    const both = applyDiff(
+      applyDiff(makeSpec(), { op: "setNumberLimit", fieldId: "total", max: 100 }).spec,
+      { op: "setNumberLimit", fieldId: "total", min: 10 },
+    ).spec;
+    const r = applyDiff(both, { op: "setNumberLimit", fieldId: "total", max: 100 });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("「合計金額」には既に同じリミットが設定されています");
+  });
+
+  it("値が動くなら上書きは成功する(冪等性の誤適用を防ぐ)", () => {
+    // 「やっぱり20万にして」を「既に設定済み」で断ってはいけない
+    const once = applyDiff(makeSpec(), { op: "setNumberLimit", fieldId: "total", max: 100 }).spec;
+    const r = applyDiff(once, { op: "setNumberLimit", fieldId: "total", max: 200 });
+
+    expect(r.ok).toBe(true);
+    expect(findField(r.spec, "total")?.max).toBe(200);
+  });
+
+  it("判定順は 型不一致 → min>max矛盾 → 同値 の順(文言の固定)", () => {
+    const withMax = applyDiff(makeSpec(), { op: "setNumberLimit", fieldId: "total", max: 100 }).spec;
+    // 同値判定より先に矛盾判定が来る。両方に当たる入力は存在しないが、順序が入れ替わると
+    // 「min > max」の文言が「既に同じリミット」に化けるケースが出る
+    expect(applyDiff(withMax, { op: "setNumberLimit", fieldId: "total", min: 200 }).reason).toBe(
+      "既存のリミットと矛盾します(min > max)",
+    );
+    expect(applyDiff(withMax, { op: "setNumberLimit", fieldId: "note", max: 1 }).reason).toBe(
+      "「備考」は数値項目ではありません",
+    );
+  });
 });
 
 describe("applyDiff / addField", () => {
@@ -223,12 +289,13 @@ describe("applyDiff / addField", () => {
     expect(r.spec.fields.at(-1)?.required).toBe(true);
   });
 
-  it("summary は保存された id ではなく指示された生の id を出す", () => {
-    // summarize() は trim 前の diff を見るため、ログ表記と実際の項目IDがずれる。
-    // 手術ログの読み手が混乱しうるが、適用結果そのものは正しい。
+  it("summary は実際に保存される id(trim 後)を出す", () => {
+    // 手術ログは「何が起きたか」の唯一の証跡なので、表記と保存された項目IDは一致させる。
+    // trim して保存するのは addField.id だけなので、summarize で trim するのもここだけ
+    // (label や fieldId を trim すると、今度はログと reason の文言がずれる)。
     const r = applyDiff(makeSpec(), { op: "addField", id: "  x  ", label: "L", fieldType: "text" });
     expect(r.spec.fields.at(-1)?.id).toBe("x");
-    expect(r.summary).toBe("addField{  x  : L (text)}");
+    expect(r.summary).toBe("addField{x: L (text)}");
   });
 
   it("select は options 未指定でも空配列になる(undefined にはならない)", () => {
@@ -250,7 +317,8 @@ describe("applyDiff / addField", () => {
   it("【既知の非対称】label は trim されない — バリデーションは trim 後、保存は生の値", () => {
     const r = applyDiff(makeSpec(), { op: "addField", id: "x", label: "  L  ", fieldType: "text" });
     expect(r.ok).toBe(true);
-    // id と揃えるなら "L" が望ましいが、現状は生値が保存される(specdiff.ts:148 vs 155)
+    // id と揃えるなら "L" が望ましいが、現状は生値が保存される
+    // (specdiff.ts は id を trim して検証・保存する一方、label は trim 後に検証して生値を保存する)
     expect(r.spec.fields.at(-1)?.label).toBe("  L  ");
   });
 });
@@ -588,7 +656,9 @@ describe("重複拒否", () => {
     expect(r.reason).toBe("同じ集計が既にあります"); // ラベルが違っても同一集計とみなす
   });
 
-  it("再適用の可否: 追加系4opは2回目が失敗し、上書き系2opは成功する", () => {
+  it("再適用の可否: renameField 以外は2回目が失敗する", () => {
+    // 「変化を生まない再適用は ok:false」が6opのうち5opの法則。
+    // UIのグレーアウト(disabled = !ops.some(ok))はこの法則の上に乗っている。
     const ops: SpecDiff[] = [
       { op: "addApprovalStep", name: "社長承認", role: "社長" },
       { op: "setNumberLimit", fieldId: "total", max: 1000 },
@@ -602,9 +672,10 @@ describe("重複拒否", () => {
       const first = applyDiff(makeSpec(), op);
       expect(first.ok).toBe(true);
       const second = applyDiff(first.spec, op);
-      // setNumberLimit と renameField は同じ値の再適用でも「変化なし」が成功扱い
-      const idempotentOk = op.op === "setNumberLimit" || op.op === "renameField";
-      expect(second.ok).toBe(idempotentOk);
+      // renameField だけは唯一の明示的な例外(同じラベルへの改名を失敗と報告しない。
+      // 上の「同じラベルへの rename も成功扱いにする」がその根拠)
+      const idempotentOk = op.op === "renameField";
+      expect(second.ok, `op=${op.op}`).toBe(idempotentOk);
     }
   });
 });
@@ -1056,12 +1127,31 @@ describe("roiSummary", () => {
     expect(roiSummary(field, records as AppRecord[])).toBeNull();
   });
 
-  it("【文言の既知の粗さ】下限割れでも「上限超過」と表示される", () => {
+  it("下限だけを設定した項目は「下限割れ」と表示される", () => {
     const f = numField("v", { unit: "円", min: 100 });
-    // min 違反も同じ文言に集約される。ROI表示としては誤読を招きうる。
+    // 違反の中身は「100 に 90 足りない」なので、上限超過と呼んではいけない。
+    // 件数・金額・年換算の計算方法は上限側と同じ(不足量を積む)。
     expect(roiSummary(f, [{ v: 10 }])).toBe(
-      "今あるデータで上限超過 1件・計¥90 → 年間換算 ¥1,080の確認対象",
+      "今あるデータで下限割れ 1件・計¥90 → 年間換算 ¥1,080の確認対象",
     );
+  });
+
+  it("上限違反と下限違反が混在したら「リミット逸脱」に丸める", () => {
+    // checkLimit は max/min 両設定時に max を優先するため、1項目でも両種の違反が混ざりうる。
+    // どちらか片方の語で代表させると必ず嘘になるので、中立の語に落とす。
+    // 超過 500(1500-1000)+ 不足 90(100-10)= 590 を1本の合計に積む
+    const f = numField("v", { unit: "円", min: 100, max: 1000 });
+    expect(roiSummary(f, [{ v: 1500 }, { v: 10 }])).toBe(
+      "今あるデータでリミット逸脱 2件・計¥590 → 年間換算 ¥7,080の確認対象",
+    );
+  });
+
+  it("非円でも違反種別で文言が変わる(件数だけの表示でも語は正しい)", () => {
+    const press = numField("press", { label: "吐出圧力", unit: "MPa", min: 0.3 });
+    expect(roiSummary(press, [{ press: 0.1 }, { press: 0.9 }])).toBe("今あるデータで下限割れ 1件");
+
+    const both = numField("press", { label: "吐出圧力", unit: "MPa", min: 0.3, max: 0.6 });
+    expect(roiSummary(both, [{ press: 0.1 }, { press: 0.9 }])).toBe("今あるデータでリミット逸脱 2件");
   });
 
   it("実シナリオ回帰: 請求書に10万円上限をかけると1件だけ該当する", () => {
@@ -1350,18 +1440,30 @@ describe("chipsForScenario", () => {
     }
   });
 
-  it.each(SCENARIOS.map((s) => s.id))("%s: setNumberLimit を含まないチップは適用後に無効化される", (id) => {
+  it.each(SCENARIOS.map((s) => s.id))("%s: 適用前は全チップが押せる(グレーアウトが早すぎない)", (id) => {
     const spec = getScenario(id).spec;
-    for (const chip of chipsForScenario(id).filter((c) => !c.ops.some((o) => o.op === "setNumberLimit"))) {
+    const chips = chipsForScenario(id);
+
+    expect(chips.length).toBeGreaterThan(0);
+    for (const chip of chips) {
+      // disabled = !ops.some(ok) なので、この述語が最初から false ならチップは
+      // 一度も押せないまま灰色で並ぶ。適用後の無効化(下)と対で初めて意味を持つ。
+      expect(chip.ops.some((op) => applyDiff(spec, op).ok), `chip=${chip.id}`).toBe(true);
+    }
+  });
+
+  it.each(SCENARIOS.map((s) => s.id))("%s: 全チップが適用後に無効化される", (id) => {
+    const spec = getScenario(id).spec;
+    for (const chip of chipsForScenario(id)) {
       const applied = applyDiffs(spec, chip.ops).spec;
       // KamiwazaApp は some(op => applyDiff(...).ok) で disabled を決めている
       expect(chip.ops.some((op) => applyDiff(applied, op).ok), `chip=${chip.id}`).toBe(false);
     }
   });
 
-  it("【既知の欠陥】setNumberLimit を含むチップは適用後もグレーアウトしない", () => {
-    // 同じリミットの再設定は「変化なし」で ok=true になるため、
-    // disabled = !ops.some(ok) が永久に false のまま。UI上は押せる状態が残り続ける。
+  it("適用後も押せたままのチップは1つも無い(F01の回帰テスト)", () => {
+    // かつては setNumberLimit の同値再適用が ok:true だったため、上限系チップだけが
+    // 押しても何も起きない状態で光り続けていた。全シナリオ横断でその再発を止める。
     const stale: string[] = [];
     for (const sc of SCENARIOS) {
       for (const chip of chipsForScenario(sc.id)) {
@@ -1369,20 +1471,31 @@ describe("chipsForScenario", () => {
         if (chip.ops.some((op) => applyDiff(applied, op).ok)) stale.push(`${sc.id}/${chip.id}`);
       }
     }
-    expect(stale).toEqual([
-      "seikyu/exec-check",
-      "seikyu/price-cap",
-      "chumonsho/big-order-approval",
-      "chumonsho/unit-price-cap",
-      "tenken/pressure-cap",
-      "tenken/temp-cap",
-      "hacchusho/big-po-check",
-    ]);
-    // 残ったチップはすべて setNumberLimit を含む = 原因はこの op の再適用が成功すること
-    expect(stale.every((k) => {
-      const [scId, chipId] = k.split("/");
-      return chipsForScenario(scId).find((c) => c.id === chipId)!.ops.some((o) => o.op === "setNumberLimit");
-    })).toBe(true);
+    expect(stale).toEqual([]);
+  });
+});
+
+describe("genericChips の適用後グレーアウト", () => {
+  // ライブ写真経路(審査員が自分の紙を出す経路)は chipsForScenario ではなく
+  // genericChips が並ぶ。上限チップ g-limit はここにも居るので、同じ保証を別途固定する。
+  it.each(SCENARIOS.map((s) => s.id))("%s: ライブ写真経路の g-limit も適用後に無効化される", (id) => {
+    const spec = getScenario(id).spec;
+    const chips = genericChips(spec, spec.firstRecord);
+    const limit = chips.find((c) => c.id === "g-limit");
+
+    expect(limit, `${id} に g-limit が出ない`).toBeDefined();
+    expect(limit!.ops.some((op) => applyDiff(spec, op).ok)).toBe(true); // 適用前は押せる
+
+    const applied = applyDiffs(spec, limit!.ops).spec;
+    expect(limit!.ops.some((op) => applyDiff(applied, op).ok)).toBe(false); // 適用後は押せない
+  });
+
+  it.each(SCENARIOS.map((s) => s.id))("%s: g-limit 以外の汎用チップも適用後に無効化される", (id) => {
+    const spec = getScenario(id).spec;
+    for (const chip of genericChips(spec, spec.firstRecord)) {
+      const applied = applyDiffs(spec, chip.ops).spec;
+      expect(chip.ops.some((op) => applyDiff(applied, op).ok), `chip=${chip.id}`).toBe(false);
+    }
   });
 });
 
@@ -1504,6 +1617,21 @@ describe("summary", () => {
     expect(applyDiff(makeSpec(), diff).summary).toBe(s);
   });
 
+  it("未知の op でも summary は必ず文字列を返す(ログに undefined を出さない)", () => {
+    // 手術ログは1行ずつ画面に流れる。summarize が undefined を返すと
+    // 舞台上に「undefined」の1行が出る(fail() は summarize の戻り値をそのまま載せる)。
+    for (const [diff, s] of [
+      [{ op: "bogus" }, "unknownOp{bogus}"],
+      [{}, "unknownOp{?}"],
+      // "?" に落ちるのは op が無い(nullish)ときだけ。空文字はそのまま出る
+      [{ op: "" }, "unknownOp{}"],
+    ] as const) {
+      const r = applyDiff(makeSpec(), diff as unknown as SpecDiff);
+      expect(typeof r.summary).toBe("string");
+      expect(r.summary).toBe(s);
+    }
+  });
+
   it("summary は diff だけから決まり、成功しても失敗しても同じ", () => {
     const diff: SpecDiff = { op: "renameField", fieldId: "total", label: "新" };
     const ok = applyDiff(makeSpec(), diff);
@@ -1516,30 +1644,437 @@ describe("summary", () => {
 });
 
 /* ============================================================
- * 既知の欠陥(意図的に現状を固定する回帰テスト)
+ * 不正な操作の封じ込め
+ * このモジュールの対外主張「不正な操作は適用されず元のspecが返る」(specdiff.ts 冒頭)を
+ * 型の上ではなく実行時に証明する層。SSE 由来の diff は実行時 any 同然なので、
+ * 型で到達不能な形の入力もここで受け止められなければ主張が嘘になる。
  * ============================================================ */
 
-describe("既知の欠陥", () => {
-  it("未知の op を渡すと DiffResult ではなく undefined が返る", () => {
-    // applyDiff の switch に default が無く、関数末尾に落ちる。
-    // 型上は到達不能だが SSE 由来の diff は実行時 any 同然なので、
-    // 呼び出し側が r?.ok で受けていないと TypeError になる。
-    const r = applyDiff(makeSpec(), { op: "bogus" } as unknown as SpecDiff) as DiffResult | undefined;
-    expect(r).toBeUndefined();
+describe("不正な操作の封じ込め", () => {
+  it("未知の op でも DiffResult が返り、spec は入力と同一参照", () => {
+    const spec = makeSpec();
+    const r: DiffResult = applyDiff(spec, { op: "bogus" } as unknown as SpecDiff);
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("未知の操作です");
+    expect(r.summary).toBe("unknownOp{bogus}"); // ログには必ず何かが残る
+    expect(Object.is(r.spec, spec)).toBe(true);
   });
 
-  it("addField の重複判定が fields しか見ないため、明細列と同じ id を作れてしまう", () => {
+  it("op プロパティが無いゴミでも落ちない", () => {
+    const spec = makeSpec();
+    const r: DiffResult = applyDiff(spec, {} as unknown as SpecDiff);
+
+    expect(r.ok).toBe(false);
+    expect(r.summary).toBe("unknownOp{?}"); // op が読めないことまで手術ログに出す
+    expect(Object.is(r.spec, spec)).toBe(true);
+  });
+
+  it.each([
+    ["null", null],
+    ["undefined", undefined],
+    ["文字列", "addField"],
+    ["配列", []],
+  ])("diff が %s でも例外を投げず、元の spec が同一参照で返る", (_name, bad) => {
+    // ここが投げると sendInstruction の try が握り潰し、指示が黙ってキーワード解釈に
+    // 落ちる(舞台上では「入力したのに別物が起きた」に見える)。
+    // KamiwazaApp.tsx:316 のコメントが主張しているのはこの範囲まで。
+    const spec = makeSpec();
+    const r: DiffResult = applyDiff(spec, bad as unknown as SpecDiff);
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("未知の操作です");
+    expect(r.summary).toBe("unknownOp{?}");
+    expect(Object.is(r.spec, spec)).toBe(true);
+  });
+
+  it("applyDiffs に不正opが混ざっても、正当なopだけが適用される", () => {
+    const spec = makeSpec();
+    const { spec: out, results } = applyDiffs(spec, [
+      { op: "addFilterColumn", fieldId: "note" },
+      { op: "bogus" } as unknown as SpecDiff,
+      { op: "addApprovalStep", name: "社長承認", role: "社長" },
+    ]);
+
+    expect(results.map((r) => r.ok)).toEqual([true, false, true]);
+    expect(out.listColumns).toEqual(["total", "note"]);
+    expect(out.approvalFlow).toHaveLength(2);
+  });
+
+  it("addField は明細列と同じ id を拒否する", () => {
     const spec = makeSpec(); // lineItems に unit_price が既にある
     const r = applyDiff(spec, { op: "addField", id: "unit_price", label: "単価(重複)", fieldType: "number" });
 
-    // 本来は拒否されるべきだが、現状は成功して id が衝突したスペックができる
-    expect(r.ok).toBe(true);
-    expect(r.spec.fields.some((f) => f.id === "unit_price")).toBe(true);
-    expect(r.spec.lineItems?.columns.some((c) => c.id === "unit_price")).toBe(true);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toContain("明細列");
+    expect(r.reason).toBe("「unit_price」は明細列「単価」と同じidです");
+    expect(Object.is(r.spec, spec)).toBe(true);
+  });
 
-    // 衝突後は setNumberLimit / renameField が fields 側を先に拾い、明細列に届かなくなる
-    expect(applyDiff(r.spec, { op: "renameField", fieldId: "unit_price", label: "Z" }).spec.lineItems?.columns[0].label).toBe(
-      "単価",
+  it("拒否されるので、setNumberLimit / renameField が明細列に届かなくなる衝突も起きない", () => {
+    // id が衝突すると、以降 fields 側が先に拾われて明細列が永久に触れなくなる。
+    // 追加を拒否している限り、明細列への操作は素通しで届く。
+    const spec = applyDiff(makeSpec(), {
+      op: "addField",
+      id: "unit_price",
+      label: "単価(重複)",
+      fieldType: "number",
+    }).spec;
+
+    expect(applyDiff(spec, { op: "renameField", fieldId: "unit_price", label: "Z" }).spec.lineItems?.columns[0].label).toBe(
+      "Z",
     );
+    expect(findCol(applyDiff(spec, { op: "setNumberLimit", fieldId: "unit_price", max: 9 }).spec, "unit_price")).toMatchObject(
+      { max: 9 },
+    );
+  });
+
+  it("id の trim 後に明細列と衝突する場合も拒否する", () => {
+    // 保存されるのは trim 後の id なので、判定も trim 後の id で行う必要がある
+    const spec = makeSpec();
+    const r = applyDiff(spec, { op: "addField", id: "  unit_price  ", label: "L", fieldType: "text" });
+
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBe("「unit_price」は明細列「単価」と同じidです");
+  });
+});
+
+/* ============================================================
+ * 一度目の適用結果の不変性(F01〜F05 の修正前に採取したゴールデン)
+ *
+ * F01〜F05 は「二度目以降の挙動」と「不正入力の扱い」を変えた修正であり、
+ * 舞台に出る一度目の見え方は1文字も変えていない、というのが対外的な主張。
+ * 下の FIRST_APPLY_GOLDEN は修正前のコードで採取した実測値そのもので、
+ * 5シナリオ × 全チップ(シナリオチップ + ライブ写真経路の汎用チップ)について
+ *   - 手術ログの行(✓/✗・summary・reason)と順序
+ *   - 素のスペックからの構造差分(= 適用結果そのもの)
+ *   - 画面に出る派生値(ROI文言・赤バッジ)
+ * を1本の文字列配列に畳んである。1行でも変われば舞台の絵が変わったということ。
+ *
+ * このテストが赤いのに「意図した変更だ」と言い切れるとき以外、値を書き換えてはいけない。
+ * ============================================================ */
+
+/** undefined を「キーごと消える」ではなく「未設定」として残す決定論シリアライザ */
+function stable(v: unknown): unknown {
+  if (v === undefined) return "(未設定)";
+  if (v === null || typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map(stable);
+  const o = v as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of Object.keys(o).sort()) out[k] = stable(o[k]);
+  return out;
+}
+const canon = (v: unknown) => JSON.stringify(stable(v));
+
+/** base から applied への構造差分を "path: 旧 → 新" の行に落とす */
+function deltaLines(base: unknown, applied: unknown, path = ""): string[] {
+  if (canon(base) === canon(applied)) return [];
+  const isObj = (x: unknown) => x !== null && typeof x === "object";
+  if (!isObj(base) || !isObj(applied) || Array.isArray(base) !== Array.isArray(applied))
+    return [`${path}: ${canon(base)} → ${canon(applied)}`];
+  if (Array.isArray(base) && Array.isArray(applied)) {
+    const out: string[] = [];
+    for (let i = 0; i < Math.max(base.length, applied.length); i++)
+      out.push(...deltaLines(base[i], applied[i], `${path}[${i}]`));
+    return out;
+  }
+  const a = base as Record<string, unknown>;
+  const b = applied as Record<string, unknown>;
+  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
+  return keys.flatMap((k) => deltaLines(a[k], b[k], path ? `${path}.${k}` : k));
+}
+
+/** 画面に出る派生値(ROI文言・赤バッジ)。リミットが載った項目だけを見る */
+function derivedLines(spec: AppSpec, records: AppRecord[]): string[] {
+  const out: string[] = [];
+  for (const f of spec.fields) {
+    if (f.type !== "number" || (f.min === undefined && f.max === undefined)) continue;
+    out.push(`roi[${f.id}]=${roiSummary(f, records)}`);
+    out.push(
+      `badge[${f.id}]=${records
+        .map((r) => {
+          const v = checkLimit(f, r[f.id]);
+          return v ? `${v.kind}:${v.amount}` : "-";
+        })
+        .join(",")}`,
+    );
+  }
+  for (const c of spec.lineItems?.columns ?? []) {
+    if (c.type !== "number" || (c.min === undefined && c.max === undefined)) continue;
+    out.push(`col[${c.id}]=min:${c.min ?? "(未設定)"},max:${c.max ?? "(未設定)"}`);
+  }
+  return out;
+}
+
+/**
+ * チップを1回押したときに観測できるものを全部集める。
+ * ops の畳み込みは KamiwazaApp.runOps と同じ(ok な op だけが spec に残り patches に積まれる)。
+ */
+function trace(base: AppSpec, seedRecords: AppRecord[], chip: CommandChip): string[] {
+  let cur = base;
+  const log: string[] = [];
+  let patches = 0;
+  for (const op of chip.ops) {
+    const r = applyDiff(cur, op);
+    log.push(`log ${r.ok ? "✓" : "✗"} ${r.summary}${r.reason ? ` — ${r.reason}` : ""}`);
+    if (r.ok) {
+      cur = r.spec;
+      patches++;
+    }
+  }
+  return [
+    `label=${chip.label}`,
+    ...log,
+    `patches=${patches}`,
+    ...deltaLines(base, cur).map((l) => `spec ${l}`),
+    ...derivedLines(cur, [cur.firstRecord, ...seedRecords]).map((l) => `view ${l}`),
+  ];
+}
+
+/** 修正前のコードで採取した実測値。キーは "シナリオid/チップid" */
+const FIRST_APPLY_GOLDEN: Record<string, string[]> = {
+  "seikyu/exec-check": [
+    "label=10万円超の請求は役員確認に",
+    "log ✓ addApprovalStep{役員確認 / 役員}",
+    "log ✓ setNumberLimit{billed, max:100000}",
+    "patches=2",
+    "spec approvalFlow[2]: \"(未設定)\" → {\"name\":\"役員確認\",\"role\":\"役員\"}",
+    "spec fields[10].max: \"(未設定)\" → 100000",
+    "view roi[billed]=今あるデータで上限超過 1件・計¥67,200 → 年間換算 約81万円の確認対象",
+    "view badge[billed]=max:67200,-,-,-,-",
+  ],
+  "seikyu/price-cap": [
+    "label=明細単価に200円の上限アラート",
+    "log ✓ setNumberLimit{unit_price, max:200}",
+    "patches=1",
+    "spec lineItems.columns[4].max: \"(未設定)\" → 200",
+    "view col[unit_price]=min:(未設定),max:200",
+  ],
+  "seikyu/avg-agg": [
+    "label=平均請求額をダッシュボードに",
+    "log ✓ addAggregation{平均請求額: avg(billed)}",
+    "patches=1",
+    "spec aggregations[2]: \"(未設定)\" → {\"fieldId\":\"billed\",\"id\":\"agg_avg_billed\",\"label\":\"平均請求額\",\"op\":\"avg\",\"unit\":\"円\"}",
+  ],
+  "seikyu/list-purchase": [
+    "label=一覧に今回買上額を表示",
+    "log ✓ addFilterColumn{purchase}",
+    "patches=1",
+    "spec listColumns[4]: \"(未設定)\" → \"purchase\"",
+  ],
+  "seikyu/g-approval": [
+    "label=承認に「社長承認」を追加",
+    "log ✓ addApprovalStep{社長承認 / 社長}",
+    "patches=1",
+    "spec approvalFlow[2]: \"(未設定)\" → {\"name\":\"社長承認\",\"role\":\"社長\"}",
+  ],
+  "seikyu/g-limit": [
+    "label=前回御請求額に上限チェック(200,000円)",
+    "log ✓ setNumberLimit{prev_amount, max:200000}",
+    "patches=1",
+    "spec fields[5].max: \"(未設定)\" → 200000",
+    "view roi[prev_amount]=今あるデータで上限超過 1件・計¥14,500 → 年間換算 約17万円の確認対象",
+    "view badge[prev_amount]=max:14500,-,-,-,-",
+  ],
+  "seikyu/g-avg": [
+    "label=平均前回御請求額を集計",
+    "log ✓ addAggregation{平均前回御請求額: avg(prev_amount)}",
+    "patches=1",
+    "spec aggregations[2]: \"(未設定)\" → {\"fieldId\":\"prev_amount\",\"id\":\"agg_avg_prev_amount\",\"label\":\"平均前回御請求額\",\"op\":\"avg\",\"unit\":\"円\"}",
+  ],
+  "chumonsho/big-order-approval": [
+    "label=8万円超の発注は社長承認に",
+    "log ✓ addApprovalStep{社長承認 / 社長}",
+    "log ✓ setNumberLimit{total, max:80000}",
+    "patches=2",
+    "spec approvalFlow[2]: \"(未設定)\" → {\"name\":\"社長承認\",\"role\":\"社長\"}",
+    "spec fields[3].max: \"(未設定)\" → 80000",
+    "view roi[total]=今あるデータで上限超過 2件・計¥73,800 → 年間換算 約89万円の確認対象",
+    "view badge[total]=max:5800,-,max:68000,-,-,-,-",
+  ],
+  "chumonsho/unit-price-cap": [
+    "label=単価に3,000円の上限チェック",
+    "log ✓ setNumberLimit{unit_price, max:3000}",
+    "patches=1",
+    "spec lineItems.columns[2].max: \"(未設定)\" → 3000",
+    "view col[unit_price]=min:(未設定),max:3000",
+  ],
+  "chumonsho/list-note": [
+    "label=一覧に備考も表示",
+    "log ✓ addFilterColumn{note}",
+    "patches=1",
+    "spec listColumns[4]: \"(未設定)\" → \"note\"",
+  ],
+  "chumonsho/avg-total": [
+    "label=平均発注額を集計",
+    "log ✓ addAggregation{平均発注額: avg(total)}",
+    "patches=1",
+    "spec aggregations[2]: \"(未設定)\" → {\"fieldId\":\"total\",\"id\":\"agg_avg_total\",\"label\":\"平均発注額\",\"op\":\"avg\",\"unit\":\"円\"}",
+  ],
+  "chumonsho/g-approval": [
+    "label=承認に「社長承認」を追加",
+    "log ✓ addApprovalStep{社長承認 / 社長}",
+    "patches=1",
+    "spec approvalFlow[2]: \"(未設定)\" → {\"name\":\"社長承認\",\"role\":\"社長\"}",
+  ],
+  "chumonsho/g-limit": [
+    "label=合計金額に上限チェック(85,000円)",
+    "log ✓ setNumberLimit{total, max:85000}",
+    "patches=1",
+    "spec fields[3].max: \"(未設定)\" → 85000",
+    "view roi[total]=今あるデータで上限超過 2件・計¥63,800 → 年間換算 約77万円の確認対象",
+    "view badge[total]=max:800,-,max:63000,-,-,-,-",
+  ],
+  "chumonsho/g-avg": [
+    "label=平均合計金額を集計",
+    "log ✓ addAggregation{平均合計金額: avg(total)}",
+    "patches=1",
+    "spec aggregations[2]: \"(未設定)\" → {\"fieldId\":\"total\",\"id\":\"agg_avg_total\",\"label\":\"平均合計金額\",\"op\":\"avg\",\"unit\":\"円\"}",
+  ],
+  "nippo/safety-approval": [
+    "label=安全責任者の確認を追加",
+    "log ✓ addApprovalStep{安全確認 / 安全責任者}",
+    "patches=1",
+    "spec approvalFlow[2]: \"(未設定)\" → {\"name\":\"安全確認\",\"role\":\"安全責任者\"}",
+  ],
+  "nippo/overtime-field": [
+    "label=残業時間の項目を追加",
+    "log ✓ addField{overtime_hours: 残業時間 (number)}",
+    "patches=1",
+    "spec fields[10]: \"(未設定)\" → {\"confidence\":1,\"id\":\"overtime_hours\",\"label\":\"残業時間\",\"options\":\"(未設定)\",\"required\":false,\"type\":\"number\",\"unit\":\"時間\"}",
+  ],
+  "nippo/list-weather": [
+    "label=一覧に天候を表示",
+    "log ✓ addFilterColumn{weather}",
+    "patches=1",
+    "spec listColumns[4]: \"(未設定)\" → \"weather\"",
+  ],
+  "nippo/g-approval": [
+    "label=承認に「社長承認」を追加",
+    "log ✓ addApprovalStep{社長承認 / 社長}",
+    "patches=1",
+    "spec approvalFlow[2]: \"(未設定)\" → {\"name\":\"社長承認\",\"role\":\"社長\"}",
+  ],
+  "nippo/g-limit": [
+    "label=休憩時間に上限チェック(0.5時間)",
+    "log ✓ setNumberLimit{break_hours, max:0.5}",
+    "patches=1",
+    "spec fields[5].max: \"(未設定)\" → 0.5",
+    "view roi[break_hours]=今あるデータで上限超過 6件",
+    "view badge[break_hours]=max:0.5,max:0.5,max:0.5,max:0.5,max:0.5,max:0.5",
+  ],
+  "tenken/pressure-cap": [
+    "label=圧力0.6MPa超を自動アラート",
+    "log ✓ setNumberLimit{pressure, max:0.6}",
+    "patches=1",
+    "spec fields[7].max: \"(未設定)\" → 0.6",
+    "view roi[pressure]=今あるデータで上限超過 3件",
+    "view badge[pressure]=max:0.05,max:0.03,-,max:0.02,-,-",
+  ],
+  "tenken/maint-approval": [
+    "label=保全課長の確認を追加",
+    "log ✓ addApprovalStep{保全課長確認 / 保全課長}",
+    "patches=1",
+    "spec approvalFlow[2]: \"(未設定)\" → {\"name\":\"保全課長確認\",\"role\":\"保全課長\"}",
+  ],
+  "tenken/temp-cap": [
+    "label=本体温度40℃の上限チェック",
+    "log ✓ setNumberLimit{temperature, max:40}",
+    "patches=1",
+    "spec fields[8].max: \"(未設定)\" → 40",
+    "view roi[temperature]=今あるデータで上限超過 3件",
+    "view badge[temperature]=max:2,max:1,-,max:3,-,-",
+  ],
+  "tenken/avg-temp": [
+    "label=平均本体温度を集計",
+    "log ✓ addAggregation{平均本体温度: avg(temperature)}",
+    "patches=1",
+    "spec aggregations[2]: \"(未設定)\" → {\"fieldId\":\"temperature\",\"id\":\"agg_avg_temperature\",\"label\":\"平均本体温度\",\"op\":\"avg\",\"unit\":\"℃\"}",
+  ],
+  "tenken/g-approval": [
+    "label=承認に「社長承認」を追加",
+    "log ✓ addApprovalStep{社長承認 / 社長}",
+    "patches=1",
+    "spec approvalFlow[2]: \"(未設定)\" → {\"name\":\"社長承認\",\"role\":\"社長\"}",
+  ],
+  "tenken/g-limit": [
+    "label=吐出圧力に上限チェック(0.6MPa)",
+    "log ✓ setNumberLimit{pressure, max:0.6}",
+    "patches=1",
+    "spec fields[7].max: \"(未設定)\" → 0.6",
+    "view roi[pressure]=今あるデータで上限超過 3件",
+    "view badge[pressure]=max:0.05,max:0.03,-,max:0.02,-,-",
+  ],
+  "hacchusho/big-po-check": [
+    "label=30万円超の発注は経理部確認に",
+    "log ✓ addApprovalStep{経理部確認 / 経理部}",
+    "log ✓ setNumberLimit{total, max:300000}",
+    "patches=2",
+    "spec approvalFlow[2]: \"(未設定)\" → {\"name\":\"経理部確認\",\"role\":\"経理部\"}",
+    "spec fields[9].max: \"(未設定)\" → 300000",
+    "view roi[total]=今あるデータで上限超過 3件・計¥750,000 → 年間換算 約900万円の確認対象",
+    "view badge[total]=max:30000,max:580000,-,max:140000,-,-",
+  ],
+  "hacchusho/list-area": [
+    "label=一覧に施策エリアを表示",
+    "log ✓ addFilterColumn{area}",
+    "patches=1",
+    "spec listColumns[4]: \"(未設定)\" → \"area\"",
+  ],
+  "hacchusho/acceptance-notice": [
+    "label=検収連絡日の項目を追加",
+    "log ✓ addField{acceptance_notice: 検収連絡日 (date)}",
+    "patches=1",
+    "spec fields[11]: \"(未設定)\" → {\"confidence\":1,\"id\":\"acceptance_notice\",\"label\":\"検収連絡日\",\"options\":\"(未設定)\",\"required\":false,\"type\":\"date\",\"unit\":\"(未設定)\"}",
+  ],
+  "hacchusho/avg-po": [
+    "label=平均発注額を集計",
+    "log ✓ addAggregation{平均発注額: avg(total)}",
+    "patches=1",
+    "spec aggregations[2]: \"(未設定)\" → {\"fieldId\":\"total\",\"id\":\"agg_avg_total\",\"label\":\"平均発注額\",\"op\":\"avg\",\"unit\":\"円\"}",
+  ],
+  "hacchusho/g-approval": [
+    "label=承認に「社長承認」を追加",
+    "log ✓ addApprovalStep{社長承認 / 社長}",
+    "patches=1",
+    "spec approvalFlow[2]: \"(未設定)\" → {\"name\":\"社長承認\",\"role\":\"社長\"}",
+  ],
+  "hacchusho/g-limit": [
+    "label=総合計に上限チェック(300,000円)",
+    "log ✓ setNumberLimit{total, max:300000}",
+    "patches=1",
+    "spec fields[9].max: \"(未設定)\" → 300000",
+    "view roi[total]=今あるデータで上限超過 3件・計¥750,000 → 年間換算 約900万円の確認対象",
+    "view badge[total]=max:30000,max:580000,-,max:140000,-,-",
+  ],
+  "hacchusho/g-avg": [
+    "label=平均総合計を集計",
+    "log ✓ addAggregation{平均総合計: avg(total)}",
+    "patches=1",
+    "spec aggregations[2]: \"(未設定)\" → {\"fieldId\":\"total\",\"id\":\"agg_avg_total\",\"label\":\"平均総合計\",\"op\":\"avg\",\"unit\":\"円\"}",
+  ],
+};
+
+describe("一度目の適用結果の不変性", () => {
+  /** シナリオチップ + ライブ写真経路の汎用チップ(実UIではこの2つは同時には出ない) */
+  const chipsOf = (id: string): CommandChip[] => {
+    const spec = getScenario(id).spec;
+    return [...chipsForScenario(id), ...genericChips(spec, spec.firstRecord)];
+  };
+
+  const keys = SCENARIOS.flatMap((sc) => chipsOf(sc.id).map((c) => `${sc.id}/${c.id}`));
+
+  it("ゴールデンの網羅範囲が実際のチップ集合と完全に一致する", () => {
+    // チップが増減したのにゴールデンが据え置きだと、新しいチップが素通りしてしまう
+    expect(keys).toEqual(Object.keys(FIRST_APPLY_GOLDEN));
+  });
+
+  it.each(keys)("%s: 1押し目のログ・spec差分・画面表示が修正前と同一", (key) => {
+    const [scenarioId, chipId] = key.split("/");
+    const sc = getScenario(scenarioId);
+    const chip = chipsOf(scenarioId).find((c) => c.id === chipId);
+
+    expect(chip, `${key} のチップが見つからない`).toBeDefined();
+    expect(trace(sc.spec, sc.seedRecords, chip!)).toEqual(FIRST_APPLY_GOLDEN[key]);
   });
 });

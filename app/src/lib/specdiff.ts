@@ -60,6 +60,8 @@ export type ReconfigureEvent =
  * ============================================================ */
 
 function summarize(diff: SpecDiff): string {
+  // SSE由来のdiffは実行時any同然。null/undefined/非オブジェクトでも例外を投げない
+  if (!diff || typeof diff !== "object") return "unknownOp{?}";
   switch (diff.op) {
     case "addApprovalStep":
       return `addApprovalStep{${diff.name} / ${diff.role}}`;
@@ -71,13 +73,20 @@ function summarize(diff: SpecDiff): string {
       return `setNumberLimit{${diff.fieldId}, ${parts.join(", ")}}`;
     }
     case "addField":
-      return `addField{${diff.id}: ${diff.label} (${diff.fieldType})}`;
+      return `addField{${diff.id?.trim()}: ${diff.label} (${diff.fieldType})}`;
     case "addAggregation":
       return `addAggregation{${diff.label}: ${diff.agg}(${diff.fieldId})}`;
     case "renameField":
       return `renameField{${diff.fieldId} → ${diff.label}}`;
     case "addFilterColumn":
       return `addFilterColumn{${diff.fieldId}}`;
+    default: {
+      // 型上は到達不能。SSE由来のdiffは実行時any同然なのでログ表記だけは必ず返す。
+      // `never` への代入で到達不能を型に固定する(SpecDiffにopを増やすとここが
+      // コンパイルエラーになり、6種凍結を破る変更が黙って通らない)
+      const unreachable: never = diff;
+      return `unknownOp{${(unreachable as { op?: string }).op ?? "?"}}`;
+    }
   }
 }
 
@@ -89,6 +98,8 @@ const NUM = (v: unknown): v is number => typeof v === "number" && Number.isFinit
 
 export function applyDiff(spec: AppSpec, diff: SpecDiff): DiffResult {
   const summary = summarize(diff);
+  // 型上は到達不能。opを読む前に落として「どんな入力でも元specを返す」を実行時にも真にする
+  if (!diff || typeof diff !== "object") return fail(spec, diff, "未知の操作です");
 
   switch (diff.op) {
     case "addApprovalStep": {
@@ -119,7 +130,12 @@ export function applyDiff(spec: AppSpec, diff: SpecDiff): DiffResult {
       const merged = (cur: { min?: number; max?: number }) => {
         const min = diff.min ?? cur.min;
         const max = diff.max ?? cur.max;
-        return { min, max, valid: min === undefined || max === undefined || min <= max };
+        return {
+          min,
+          max,
+          valid: min === undefined || max === undefined || min <= max,
+          unchanged: min === cur.min && max === cur.max,
+        };
       };
       const fi = spec.fields.findIndex((f) => f.id === diff.fieldId);
       if (fi >= 0) {
@@ -127,6 +143,8 @@ export function applyDiff(spec: AppSpec, diff: SpecDiff): DiffResult {
           return fail(spec, diff, `「${spec.fields[fi].label}」は数値項目ではありません`);
         const m = merged(spec.fields[fi]);
         if (!m.valid) return fail(spec, diff, "既存のリミットと矛盾します(min > max)");
+        if (m.unchanged)
+          return fail(spec, diff, `「${spec.fields[fi].label}」には既に同じリミットが設定されています`);
         const fields = spec.fields.slice();
         fields[fi] = { ...fields[fi], min: m.min, max: m.max };
         return { ok: true, summary, spec: { ...spec, fields } };
@@ -137,6 +155,12 @@ export function applyDiff(spec: AppSpec, diff: SpecDiff): DiffResult {
           return fail(spec, diff, `明細列「${spec.lineItems.columns[ci].label}」は数値列ではありません`);
         const m = merged(spec.lineItems.columns[ci]);
         if (!m.valid) return fail(spec, diff, "既存のリミットと矛盾します(min > max)");
+        if (m.unchanged)
+          return fail(
+            spec,
+            diff,
+            `明細列「${spec.lineItems.columns[ci].label}」には既に同じリミットが設定されています`,
+          );
         const columns = spec.lineItems.columns.slice();
         columns[ci] = { ...columns[ci], min: m.min, max: m.max };
         return { ok: true, summary, spec: { ...spec, lineItems: { ...spec.lineItems, columns } } };
@@ -149,6 +173,8 @@ export function applyDiff(spec: AppSpec, diff: SpecDiff): DiffResult {
       if (!id || !diff.label?.trim()) return fail(spec, diff, "idとラベルが必要です");
       if (spec.fields.some((f) => f.id === id))
         return fail(spec, diff, `項目「${id}」は既に存在します`);
+      const clash = spec.lineItems?.columns.find((c) => c.id === id);
+      if (clash) return fail(spec, diff, `「${id}」は明細列「${clash.label}」と同じidです`);
       if (spec.fields.length >= 20) return fail(spec, diff, "項目は20個までです");
       const field: FieldSpec = {
         id,
@@ -210,6 +236,15 @@ export function applyDiff(spec: AppSpec, diff: SpecDiff): DiffResult {
       if (spec.listColumns.length >= 6) return fail(spec, diff, "一覧の列は6つまでです");
       return { ok: true, summary, spec: { ...spec, listColumns: [...spec.listColumns, diff.fieldId] } };
     }
+
+    default: {
+      // 型上は到達不能(toolCallToDiffが未知ツール名をnullで除去する)。
+      // それでも「不正な操作は適用されず元のspecが返る」を実行時にも真にする。
+      // `never` への代入で、SpecDiffにopが増えたときは実行時fallbackに黙って
+      // 流れ込まずコンパイルエラーになる(summarize と対)
+      const unreachable: never = diff;
+      return fail(spec, unreachable, "未知の操作です");
+    }
   }
 }
 
@@ -265,22 +300,28 @@ export function roiSummary(
     return null;
   let count = 0;
   let total = 0;
+  let maxCount = 0;
+  let minCount = 0;
   for (const r of records) {
     const viol = checkLimit(field, r[field.id]);
     if (viol) {
       count++;
       total += viol.amount;
+      if (viol.kind === "max") maxCount++;
+      else minCount++;
     }
   }
   if (count === 0) return null;
+  // 下限だけを設定した項目で「上限超過」と出さない(minCountが立つのは自由文経路のみ)
+  const kind = maxCount > 0 && minCount > 0 ? "リミット逸脱" : minCount > 0 ? "下限割れ" : "上限超過";
   const unit = field.unit ?? "";
   if (unit === "円") {
     const annual = total * 12;
     const annualText =
       annual >= 10000 ? `約${Math.round(annual / 10000).toLocaleString()}万円` : `¥${annual.toLocaleString()}`;
-    return `今あるデータで上限超過 ${count}件・計¥${total.toLocaleString()} → 年間換算 ${annualText}の確認対象`;
+    return `今あるデータで${kind} ${count}件・計¥${total.toLocaleString()} → 年間換算 ${annualText}の確認対象`;
   }
-  return `今あるデータで上限超過 ${count}件`;
+  return `今あるデータで${kind} ${count}件`;
 }
 
 /* ============================================================

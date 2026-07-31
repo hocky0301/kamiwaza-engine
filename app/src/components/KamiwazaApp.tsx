@@ -313,7 +313,8 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
   }, [spec, question]);
 
   // 「日本語で書いて直す」のパッチを畳み込んだ最終スペック。
-  // applyDiffは純粋関数で、不正なopは無視して元specを返すため常に安全
+  // applyDiffは純粋関数で、未知op・null・非オブジェクトのどれでもfail()に落ちて
+  // 入力specを同一参照で返す(specdiff.ts の入口ガードと default 節)ため常に安全
   const reconfiguredSpec = useMemo(() => {
     if (!effectiveSpec) return null;
     return patches.flat().reduce((s, d) => applyDiff(s, d).spec, effectiveSpec);
