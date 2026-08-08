@@ -6,7 +6,7 @@
 .env.local
 .env*.local
 
-# Claude Code のローカル設定(権限グラントなど個人環境固有)
+# 開発ツールのローカル設定(権限グラントなど個人環境固有)
 .claude/settings.local.json
 
 # 実在企業の実書類(取引先名・金額・個人情報を含む)— 絶対にコミットしない
