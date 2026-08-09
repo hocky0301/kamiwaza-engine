@@ -8,8 +8,8 @@ import type {
   AppRecord,
   FieldSpec,
   FieldType,
-  ColumnSpec,
 } from "./appspec";
+import type { LlmUsage, PricingSource } from "./events";
 
 /* ============================================================
  * 操作集合(6種で凍結)
@@ -52,7 +52,16 @@ export interface PatchLogEntry {
 export type ReconfigureEvent =
   | { type: "rphase"; label: string }
   | { type: "patch"; diff: SpecDiff; ok: boolean; reason?: string; summary: string }
-  | { type: "rdone"; applied: number }
+  /** usage はライブ解釈がAPIを呼んだときのみ付く(キーワードフォールバック単独では捏造しない) */
+  | {
+      type: "rdone";
+      applied: number;
+      usage?: LlmUsage;
+      /** usage があるときのみ: usage×公表単価による推定原価(USD)。課金の正はダッシュボード */
+      costUsd?: number;
+      /** 単価の出典: live=/v1/models実測 / fallback=定数($5/$25) */
+      pricingSource?: PricingSource;
+    }
   | { type: "rerror"; message: string };
 
 /* ============================================================
