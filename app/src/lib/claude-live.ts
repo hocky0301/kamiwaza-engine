@@ -18,6 +18,7 @@ import type { AnalyzeEvent, LlmUsage } from "./events";
 import { getLlmClient } from "./llm-client";
 import { estimateCostUsd, getModelRates, warmPricingCache } from "./llm-pricing";
 import { extractBalancedJson, stripCodeFences, tryParsePartial } from "./partial-json";
+import { parseRotationResponse, resolveRotationVotes, type Rotation } from "./rotation";
 import { validateAnalyzeOutput } from "./validate-spec";
 
 const SYSTEM_PROMPT = `あなたは「カミワザ」— 紙の帳票の写真から業務アプリの仕様(AppSpec)を生成するエンジンです。
@@ -70,12 +71,12 @@ function isCompleteField(f: unknown): f is FieldSpec {
  * (FAXヘッダだけ正向きのケースもあるため、本文基準で判定させる)。
  * 返り値は「時計回りに何度回すと正しい向きになるか」。
  */
-async function detectRotation(
+async function askRotationOnce(
   client: Anthropic,
   model: string,
   data: string,
   mediaType: SupportedMedia,
-): Promise<{ rotation: 0 | 90 | 180 | 270; usage: Anthropic.Usage | null }> {
+): Promise<{ vote: Rotation | null; usage: Anthropic.Usage | null }> {
   const res = await client.messages.create({
     model,
     max_tokens: 200,
@@ -106,32 +107,47 @@ async function detectRotation(
           },
           {
             type: "text",
-            text: "この事務書類のスキャン画像を、本文が正しく読める向きにするには時計回りに何度回転させる必要がありますか。注意: FAX送信ヘッダ(最上部の細い送信情報行)は本文と逆向きに印字されることがあります。必ず本文(タイトル・表・記入内容)の向きを基準に判定してください。",
+            // OrcaRouter経路では output_config が透過されずスキーマ強制が効かないため、
+            // 出力形式の指示をプロンプト本文にも重ねて書く(F07)
+            text: 'この事務書類のスキャン画像を、本文が正しく読める向きにするには時計回りに何度回転させる必要がありますか。注意: FAX送信ヘッダ(最上部の細い送信情報行)は本文と逆向きに印字されることがあります。必ず本文(タイトル・表・記入内容)の向きを基準に判定してください。回答は {"rotation": 0} のようなJSONのみで返してください(0/90/180/270のいずれか)。説明文は不要です。',
           },
         ],
       },
     ],
   });
   const usage = res.usage ?? null;
-  if (res.stop_reason === "refusal") return { rotation: 0, usage };
-  const text = res.content.find((b) => b.type === "text")?.text ?? "{}";
-  try {
-    // OrcaRouter経路では```jsonフェンス付き(まれに前後に散文付き)で返りうるため
-    // フェンス除去→失敗時は完結JSONの抽出、の順で救済してからパースする
-    const strippedRot = stripCodeFences(text);
-    let parsed: { rotation: number };
-    try {
-      parsed = JSON.parse(strippedRot || "{}") as { rotation: number };
-    } catch {
-      parsed = JSON.parse(extractBalancedJson(strippedRot) ?? "{}") as { rotation: number };
-    }
-    if ([0, 90, 180, 270].includes(parsed.rotation)) {
-      return { rotation: parsed.rotation as 0 | 90 | 180 | 270, usage };
-    }
-  } catch {
-    // 判定失敗時は回転なしとして続行
-  }
-  return { rotation: 0, usage };
+  if (res.stop_reason === "refusal") return { vote: 0, usage };
+  const text = res.content.find((b) => b.type === "text")?.text;
+  if (!text) return { vote: null, usage }; // 空content(2026-08-09実測)は判定不能扱い
+  return { vote: parseRotationResponse(text), usage };
+}
+
+async function detectRotation(
+  client: Anthropic,
+  model: string,
+  data: string,
+  mediaType: SupportedMedia,
+): Promise<{ rotation: 0 | 90 | 180 | 270; usage: Anthropic.Usage | null }> {
+  // 1回目の判定。0(または判定不能)なら追加コストゼロでそのまま採用。
+  const first = await askRotationOnce(client, model, data, mediaType);
+  if (!first.vote) return { rotation: 0, usage: first.usage };
+  // 非ゼロ判定のみ二重確認: 画像を見ずに妥当なJSONを返す誤判定が実測されており(F07)、
+  // 誤回転は読み取り崩壊を誘発するため、2回の合議一致時のみ適用する。
+  const second = await askRotationOnce(client, model, data, mediaType);
+  const merged: Anthropic.Usage | null = first.usage
+    ? {
+        ...first.usage,
+        input_tokens: (first.usage.input_tokens ?? 0) + (second.usage?.input_tokens ?? 0),
+        output_tokens: (first.usage.output_tokens ?? 0) + (second.usage?.output_tokens ?? 0),
+        cache_creation_input_tokens:
+          (first.usage.cache_creation_input_tokens ?? 0) +
+          (second.usage?.cache_creation_input_tokens ?? 0),
+        cache_read_input_tokens:
+          (first.usage.cache_read_input_tokens ?? 0) +
+          (second.usage?.cache_read_input_tokens ?? 0),
+      }
+    : second.usage;
+  return { rotation: resolveRotationVotes(first.vote, second.vote), usage: merged };
 }
 
 export async function streamLiveAnalysis(
