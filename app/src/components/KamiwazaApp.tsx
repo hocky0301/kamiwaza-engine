@@ -22,6 +22,12 @@ import {
   type SpecDiff,
 } from "@/lib/specdiff";
 import { SCENARIOS, getScenario } from "@/lib/scenarios";
+import {
+  buildStateFromSpec,
+  diffBuildState,
+  initialBuildState,
+  type StreamedBuildState,
+} from "@/lib/reconcile";
 import { toggleHighlight } from "@/lib/highlight";
 import { PaperView } from "./PaperView";
 import { BuildPanel, type BuildState } from "./BuildPanel";
@@ -115,6 +121,13 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
 
   const abortRef = useRef<AbortController | null>(null);
   const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * ストリームから組み立てた画面状態のミラー(三重保険 第2層)。
+   * meta/fields/... の state と並行して更新し、done 受信時に ev.spec と照合する。
+   * state を直接読まないのは、handleEvent が deps 空の useCallback で
+   * 古いクロージャの state しか見えないため(refは常に最新)。
+   */
+  const streamedRef = useRef<StreamedBuildState>(initialBuildState());
   /** 最新のreconfiguredSpecを非同期処理から参照するためのref */
   const specRef = useRef<AppSpec | null>(null);
   /**
@@ -149,6 +162,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
     setPatchLog([]);
     setReconfBusy(false);
     setCost(null);
+    streamedRef.current = initialBuildState();
     // 進行中の再構成を無効化(世代を進め、in-flightのfetchも切る)
     reconfGenRef.current += 1;
     reconfAbortRef.current?.abort();
@@ -172,12 +186,18 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
         setApproval(undefined);
         setAggs([]);
         setRecord(null);
+        streamedRef.current = {
+          ...initialBuildState(),
+          meta: { appName: ev.appName, icon: ev.icon, description: ev.description },
+        };
         break;
       case "field":
         setFields((f) => [...f, ev.field]);
+        streamedRef.current.fields.push(ev.field);
         break;
       case "lineitems":
         setLineItems({ spec: ev.spec, rowCount: ev.rowCount });
+        streamedRef.current.lineItems = { spec: ev.spec, rowCount: ev.rowCount };
         break;
       case "question":
         setQuestion({
@@ -189,14 +209,49 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
         break;
       case "approval":
         setApproval(ev.flow);
+        streamedRef.current.approval = ev.flow;
         break;
       case "aggregation":
         setAggs((a) => [...a, ev.agg]);
+        streamedRef.current.aggs.push(ev.agg);
         break;
       case "record":
         setRecord(ev.record);
+        streamedRef.current.record = ev.record;
         break;
-      case "done":
+      case "validation":
+        // アプリ側スキーマ検証の結果を開発ログに残す(UI変更なし)。
+        // ok: false のときはサーバー側で直後にライブ解析が失敗扱い→デモフォールバックが走る
+        console.info(
+          ev.ok
+            ? "[kamiwaza] アプリ側スキーマ検証: ok(違反0件)"
+            : `[kamiwaza] アプリ側スキーマ検証: ${ev.violations}件の違反 — デモフォールバックへ`,
+        );
+        break;
+      case "done": {
+        // 三重保険 第2層: done.spec を正としてストリーム組み立て状態を照合・復元する。
+        // 正常時は streamed ≡ done.spec(ライブ実測で確認済み・デモは構成上恒等)なので
+        // 視覚的差分ゼロ。デルタ重複による文字列破損・SSE行破損によるイベント欠落など
+        // 破損時のみ、done後〜ready遷移(900ms)の間の BuildPanel 表示が静かに直る。
+        // 照合結果はブースでのデバッグ用にコンソールへ残す。
+        const issues = diffBuildState(streamedRef.current, ev.spec);
+        if (issues.length > 0) {
+          console.warn(
+            `[kamiwaza] done.spec照合: ${issues.length}件の不一致を検出 — done.specを正として再描画`,
+            issues,
+          );
+        } else {
+          console.info("[kamiwaza] done.spec照合: ストリーム組み立て状態と一致");
+        }
+        const rebuilt = buildStateFromSpec(ev.spec);
+        streamedRef.current = rebuilt;
+        setMeta(rebuilt.meta);
+        setFields(rebuilt.fields);
+        setLineItems(rebuilt.lineItems);
+        setApproval(rebuilt.approval);
+        setAggs(rebuilt.aggs);
+        setRecord(rebuilt.record);
+
         setSpec(ev.spec);
         setMode(ev.mode);
         // 原価チップ: ライブ経路でusage実測+推定原価があるときだけ初期化。
@@ -223,6 +278,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
           window.scrollTo({ top: 0, behavior: "smooth" });
         }, 900);
         break;
+      }
       case "error":
         setError(ev.message);
         break;
