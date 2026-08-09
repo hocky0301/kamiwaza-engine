@@ -40,6 +40,26 @@ body {
     "Yu Gothic",
     "Noto Sans JP",
     sans-serif;
+  /* ホーム画面起動(status-bar: black-translucent)でステータスバー/ノッチと
+     重ならないための余白。通常のブラウザ表示では env() は 0 で無影響 */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* ============ タッチ対応 ============ */
+
+/* iOS Safariのダブルタップズーム暴発を防ぐ(チップ連打・ボタン連打対策)。
+   ピンチズームとスクロールは阻害しない。viewportはNextデフォルトのため
+   300ms遅延は元から無く、これはズーム事故の防止のみを担う */
+button,
+[role="button"],
+label,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
 }
 
 /* ============ 紙 ============ */

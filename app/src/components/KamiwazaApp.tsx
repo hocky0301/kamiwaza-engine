@@ -22,6 +22,7 @@ import {
   type SpecDiff,
 } from "@/lib/specdiff";
 import { SCENARIOS, getScenario } from "@/lib/scenarios";
+import { toggleHighlight } from "@/lib/highlight";
 import { PaperView } from "./PaperView";
 import { BuildPanel, type BuildState } from "./BuildPanel";
 import {
@@ -100,6 +101,8 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
   const [error, setError] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [highlight, setHighlight] = useState<SourceBox | null>(null);
+  // LIVE READY/DEMO MODEバッジの説明(title)はタッチで見えないため、タップで開くポップオーバーを持つ
+  const [statusInfoOpen, setStatusInfoOpen] = useState(false);
 
   // 「日本語で書いて直す」— 適用済みパッチ(1ユーザー操作=1グループ)と手術ログ
   const [patches, setPatches] = useState<SpecDiff[][]>([]);
@@ -538,6 +541,11 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
     [reconfBusy, runOps],
   );
 
+  /** タップ発火用: 同じ出典の再タップで解除、別の出典で切り替え(規則はlib/highlight.ts) */
+  const handleHighlightToggle = useCallback((box: SourceBox) => {
+    setHighlight((cur) => toggleHighlight(cur, box));
+  }, []);
+
   const undoPatch = useCallback(() => {
     if (reconfBusy || patches.length === 0) return;
     const n = patches[patches.length - 1].length;
@@ -569,24 +577,36 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
         {screen !== "select" && (
           <button
             onClick={backToSelect}
-            className="rounded-lg border border-line px-3 py-1.5 text-sm text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            // タッチ端末は見た目を変えず疑似要素でヒット領域だけ44pt相当へ拡張
+            className="relative rounded-lg border border-line px-3 py-1.5 text-sm text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-1.5 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
           >
             {/* モバイルは横幅が足りないので短縮ラベル(意味は同じ) */}
             <span className="sm:hidden">← 別の紙</span>
             <span className="hidden sm:inline">← 別の紙を試す</span>
           </button>
         )}
-        <span
-          className={`text-[11px] rounded-full px-3 py-1 font-bold whitespace-nowrap shrink-0 ${
-            liveAvailable ? "bg-ok/15 text-ok" : "bg-accent-soft text-accent"
-          }`}
-          title={
-            liveAvailable
-              ? "ANTHROPIC_API_KEY が設定されています。写真のライブ解析が使えます"
-              : "APIキーなしでも完全動作するデモモードで動いています"
-          }
-        >
-          {liveAvailable ? "LIVE READY" : "DEMO MODE"}
+        {/* titleツールチップはタッチで見えないため、タップで説明ポップオーバーを開くbutton化 */}
+        <span className="relative shrink-0">
+          <button
+            onClick={() => setStatusInfoOpen((o) => !o)}
+            className={`relative text-[11px] rounded-full px-3 py-1 font-bold whitespace-nowrap cursor-pointer pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-[''] ${
+              liveAvailable ? "bg-ok/15 text-ok" : "bg-accent-soft text-accent"
+            }`}
+            title={
+              liveAvailable
+                ? "ANTHROPIC_API_KEY が設定されています。写真のライブ解析が使えます"
+                : "APIキーなしでも完全動作するデモモードで動いています"
+            }
+          >
+            {liveAvailable ? "LIVE READY" : "DEMO MODE"}
+          </button>
+          {statusInfoOpen && (
+            <span className="absolute right-0 top-full mt-2 z-30 block w-64 card p-3 text-xs leading-relaxed text-dim font-normal text-left whitespace-normal shadow-xl">
+              {liveAvailable
+                ? "ANTHROPIC_API_KEY が設定されています。写真のライブ解析が使えます"
+                : "APIキーなしでも完全動作するデモモードで動いています"}
+            </span>
+          )}
         </span>
       </div>
     </header>
@@ -629,7 +649,8 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
               <button
                 key={s.id}
                 onClick={() => startScenario(s.id)}
-                className="group card p-4 text-left hover:border-accent/60 transition-colors cursor-pointer"
+                // active: はタッチでも効く押下フィードバック(hoverリフトのタッチ代替)
+                className="group card p-4 text-left hover:border-accent/60 active:border-accent/60 transition-colors cursor-pointer"
               >
                 <div className="pointer-events-none mb-3 group-hover:-translate-y-1 transition-transform">
                   <PaperView elements={s.paper} />
@@ -744,6 +765,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
               mode={mode}
               cost={mode === "live" ? cost : null}
               onHighlight={setHighlight}
+              onHighlightToggle={handleHighlightToggle}
               question={question}
               onAnswer={answerQuestion}
               chips={chips}
