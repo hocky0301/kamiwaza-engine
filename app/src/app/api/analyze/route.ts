@@ -1,11 +1,12 @@
 // POST /api/analyze — 帳票解析ストリーム(SSE)。
-// ANTHROPIC_API_KEY があり画像が送られてきた場合はライブ解析、
+// LLMキー(ORCAROUTER_API_KEY / ANTHROPIC_API_KEY)があり画像が送られてきた場合はライブ解析、
 // それ以外はシナリオのデモリプレイ。イベント形式は完全に共通。
 
 import { buildDemoSequence } from "@/lib/demo";
 import { getScenario } from "@/lib/scenarios";
 import { streamLiveAnalysis } from "@/lib/claude-live";
 import { sseLine, type AnalyzeEvent } from "@/lib/events";
+import { hasLlmClient } from "@/lib/llm-client";
 import { payloadTooLarge, readJsonLimited } from "@/lib/http";
 
 export const runtime = "nodejs";
@@ -35,8 +36,7 @@ export async function POST(req: Request) {
   if (body.image && (body.image.data?.length ?? 0) > MAX_IMAGE_BASE64) {
     return payloadTooLarge();
   }
-  const hasKey = !!process.env.ANTHROPIC_API_KEY;
-  const useLive = hasKey && !!body.image?.data;
+  const useLive = hasLlmClient() && !!body.image?.data;
 
   const encoder = new TextEncoder();
   let closed = false;

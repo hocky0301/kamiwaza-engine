@@ -1,8 +1,12 @@
 // ライブモード: Claude Vision で実際の帳票写真を解析する(サーバー専用)。
 // structured outputs でAppSpec DSLに制約した出力をストリーミングし、
 // 途中経過をデモモードと同じ AnalyzeEvent 列として流す。
+//
+// LLM経路は llm-client.ts のファクトリが解決する(OrcaRouter / 直接Anthropic)。
+// OrcaRouter経路では structured outputs が握りつぶされるため、
+// フェンス耐性パーサ(partial-json.ts)とアプリ側スキーマ検証(validate-spec.ts)で防御する。
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import {
   ANALYZE_OUTPUT_JSON_SCHEMA,
@@ -10,7 +14,11 @@ import {
   type AnalyzeOutput,
   type FieldSpec,
 } from "./appspec";
-import type { AnalyzeEvent } from "./events";
+import type { AnalyzeEvent, LlmUsage } from "./events";
+import { getLlmClient } from "./llm-client";
+import { estimateCostUsd, getModelRates, warmPricingCache } from "./llm-pricing";
+import { extractBalancedJson, stripCodeFences, tryParsePartial } from "./partial-json";
+import { validateAnalyzeOutput } from "./validate-spec";
 
 const SYSTEM_PROMPT = `あなたは「カミワザ」— 紙の帳票の写真から業務アプリの仕様(AppSpec)を生成するエンジンです。
 渡された帳票画像を解析し、スキーマに従ったJSONだけを出力してください。
@@ -37,57 +45,13 @@ const SUPPORTED_MEDIA: SupportedMedia[] = [
   "image/gif",
 ];
 
-/**
- * 未完成のJSON文字列を閉じてパースを試みる。
- * ストリーミング中のプログレッシブレンダリングに使う(失敗したらnullで次のトークンを待つ)。
- */
-function tryParsePartial(buf: string): Record<string, unknown> | null {
-  const candidates = [buf];
-  const lastComma = buf.lastIndexOf(",");
-  if (lastComma > 0) candidates.push(buf.slice(0, lastComma));
-
-  for (const candidate of candidates) {
-    const completed = completeJson(candidate);
-    if (!completed) continue;
-    try {
-      const parsed = JSON.parse(completed);
-      if (parsed && typeof parsed === "object") return parsed;
-    } catch {
-      // 次の候補へ
-    }
-  }
-  return null;
-}
-
-function completeJson(src: string): string | null {
-  const stack: string[] = [];
-  let inString = false;
-  let escaped = false;
-  for (const ch of src) {
-    if (escaped) {
-      escaped = false;
-      continue;
-    }
-    if (inString) {
-      if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') inString = true;
-    else if (ch === "{") stack.push("}");
-    else if (ch === "[") stack.push("]");
-    else if (ch === "}" || ch === "]") {
-      if (stack.pop() !== ch) return null; // 壊れたJSON
-    }
-  }
-  let out = src;
-  if (escaped) out = out.slice(0, -1);
-  if (inString) out += '"';
-  out = out.replace(/[\s]+$/, "");
-  if (out.endsWith(",")) out = out.slice(0, -1);
-  if (out.endsWith(":")) out += "null";
-  while (stack.length) out += stack.pop();
-  return out;
+/** usage合算(回転検出+本解析)。フィールドがnullのAPI応答は0として扱う */
+function addUsage(total: LlmUsage, u: Anthropic.Usage | null | undefined): void {
+  if (!u) return;
+  total.inputTokens += u.input_tokens ?? 0;
+  total.outputTokens += u.output_tokens ?? 0;
+  total.cacheCreationInputTokens += u.cache_creation_input_tokens ?? 0;
+  total.cacheReadInputTokens += u.cache_read_input_tokens ?? 0;
 }
 
 function isCompleteField(f: unknown): f is FieldSpec {
@@ -108,11 +72,12 @@ function isCompleteField(f: unknown): f is FieldSpec {
  */
 async function detectRotation(
   client: Anthropic,
+  model: string,
   data: string,
   mediaType: SupportedMedia,
-): Promise<0 | 90 | 180 | 270> {
+): Promise<{ rotation: 0 | 90 | 180 | 270; usage: Anthropic.Usage | null }> {
   const res = await client.messages.create({
-    model: "claude-opus-4-8",
+    model,
     max_tokens: 200,
     output_config: {
       format: {
@@ -147,17 +112,26 @@ async function detectRotation(
       },
     ],
   });
-  if (res.stop_reason === "refusal") return 0;
+  const usage = res.usage ?? null;
+  if (res.stop_reason === "refusal") return { rotation: 0, usage };
   const text = res.content.find((b) => b.type === "text")?.text ?? "{}";
   try {
-    const parsed = JSON.parse(text) as { rotation: number };
+    // OrcaRouter経路では```jsonフェンス付き(まれに前後に散文付き)で返りうるため
+    // フェンス除去→失敗時は完結JSONの抽出、の順で救済してからパースする
+    const strippedRot = stripCodeFences(text);
+    let parsed: { rotation: number };
+    try {
+      parsed = JSON.parse(strippedRot || "{}") as { rotation: number };
+    } catch {
+      parsed = JSON.parse(extractBalancedJson(strippedRot) ?? "{}") as { rotation: number };
+    }
     if ([0, 90, 180, 270].includes(parsed.rotation)) {
-      return parsed.rotation as 0 | 90 | 180 | 270;
+      return { rotation: parsed.rotation as 0 | 90 | 180 | 270, usage };
     }
   } catch {
     // 判定失敗時は回転なしとして続行
   }
-  return 0;
+  return { rotation: 0, usage };
 }
 
 export async function streamLiveAnalysis(
@@ -169,13 +143,31 @@ export async function streamLiveAnalysis(
     : "image/jpeg";
   let imageData = image.data;
 
-  const client = new Anthropic();
+  const llm = getLlmClient();
+  if (!llm) throw new Error("LLMのAPIキーが設定されていません");
+  const { client, model } = llm;
+  console.log(`live analysis via ${llm.route} (${model})`);
+  // 原価チップ用の単価を先に温める(解析中に取得が終わり、done発行時の待ちゼロ)
+  warmPricingCache(llm.route);
+
+  const usage: LlmUsage = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheCreationInputTokens: 0,
+    cacheReadInputTokens: 0,
+  };
 
   emit({ type: "phase", label: "画像を受信しました" });
   emit({ type: "phase", label: "文書の向きを確認しています…" });
 
   try {
-    const rotation = await detectRotation(client, imageData, mediaType);
+    const { rotation, usage: rotationUsage } = await detectRotation(
+      client,
+      model,
+      imageData,
+      mediaType,
+    );
+    addUsage(usage, rotationUsage);
     if (rotation !== 0) {
       const rotated = await sharp(Buffer.from(imageData, "base64"))
         .rotate(rotation)
@@ -197,7 +189,7 @@ export async function streamLiveAnalysis(
   emit({ type: "phase", label: "Claude Vision が帳票を読み取っています…(ライブ)" });
 
   const stream = client.messages.stream({
-    model: "claude-opus-4-8",
+    model,
     max_tokens: 16000,
     system: [
       {
@@ -270,6 +262,7 @@ export async function streamLiveAnalysis(
   });
 
   const final = await stream.finalMessage();
+  addUsage(usage, final.usage);
 
   if (final.stop_reason === "refusal") {
     throw new Error("解析リクエストが拒否されました");
@@ -279,7 +272,33 @@ export async function streamLiveAnalysis(
   }
 
   const text = final.content.find((b) => b.type === "text")?.text ?? "";
-  const output = JSON.parse(text) as AnalyzeOutput;
+  // OrcaRouter経路では```jsonフェンス付きで返るため、除去してからパースする。
+  // それでも失敗する場合(閉じフェンスの後に散文が続く等)は、括弧の対応が取れた
+  // 先頭のJSONだけを取り出して再試行する(直接Anthropic経路の生JSONはここに来ない)
+  const stripped = stripCodeFences(text);
+  let output: AnalyzeOutput;
+  try {
+    output = JSON.parse(stripped) as AnalyzeOutput;
+  } catch {
+    const rescued = extractBalancedJson(stripped);
+    if (!rescued) throw new Error("LLM応答からJSONを取り出せませんでした");
+    output = JSON.parse(rescued) as AnalyzeOutput;
+  }
+
+  // アプリ側スキーマ強制: サーバー側スキーマ強制が効かない経路(OrcaRouter)でも
+  // 出力がAppSpec DSLに収まっていることを保証する。違反時はthrowして
+  // 既存の「ライブ失敗→デモフォールバック」連鎖に流す(新しい失敗モードは作らない)。
+  // 部分バッファには適用しない(生成途中のrequired欠落は正常)。
+  const violations = validateAnalyzeOutput(output);
+  emit({ type: "validation", ok: violations.length === 0, violations: violations.length });
+  if (violations.length > 0) {
+    const detail = violations
+      .slice(0, 5)
+      .map((v) => `${v.keyword}@${v.path}`)
+      .join(", ");
+    throw new Error(`出力がスキーマ検証に失敗 (${violations.length}件: ${detail})`);
+  }
+
   const spec = toAppSpec(output);
 
   if (!metaEmitted) {
@@ -318,5 +337,16 @@ export async function streamLiveAnalysis(
   }
   emit({ type: "record", record: spec.firstRecord, lines: spec.firstRecordLines });
   emit({ type: "phase", label: "紙に書かれていた内容を 1件目のデータとして登録しました" });
-  emit({ type: "done", spec, mode: "live" });
+  // 推定原価: トークン実測×公表単価の保守的上限(課金の正はダッシュボード)。
+  // getModelRates は絶対に throw しない(失敗時は定数$5/$25にフォールバック)
+  const { rates, source } = await getModelRates(model, llm.route);
+  emit({
+    type: "done",
+    spec,
+    mode: "live",
+    usage,
+    llmRoute: llm.route,
+    costUsd: estimateCostUsd(usage, rates),
+    pricingSource: source,
+  });
 }

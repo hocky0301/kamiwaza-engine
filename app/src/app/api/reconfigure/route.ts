@@ -4,8 +4,11 @@
 // APIキーなし/失敗時: キーワードフォールバックで定型差分に変換。
 // なお提案チップはこのルートを通らず、クライアント側で直接applyDiffされる。
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
 import type { AppSpec } from "@/lib/appspec";
+import type { LlmUsage, PricingSource } from "@/lib/events";
+import { getLlmClient, hasLlmClient } from "@/lib/llm-client";
+import { estimateCostUsd, getModelRates } from "@/lib/llm-pricing";
 import { payloadTooLarge, readJsonLimited } from "@/lib/http";
 import {
   applyDiffs,
@@ -50,13 +53,22 @@ function specBrief(spec: AppSpec): string {
   return `# 現在のアプリ「${spec.appName}」\n## 項目\n${fields}\n${cols}\n## 承認フロー\n${flow}\n## 一覧の列\n${spec.listColumns.join(", ")}`;
 }
 
-async function liveInterpret(spec: AppSpec, instruction: string): Promise<SpecDiff[]> {
-  const client = new Anthropic();
+async function liveInterpret(
+  spec: AppSpec,
+  instruction: string,
+): Promise<{
+  diffs: SpecDiff[];
+  usage?: LlmUsage;
+  costUsd?: number;
+  pricingSource?: PricingSource;
+}> {
+  const llm = getLlmClient();
+  if (!llm) return { diffs: [] };
   const tools = buildReconfigureTools(spec);
 
-  const res = await client.messages.create(
+  const res = await llm.client.messages.create(
     {
-      model: "claude-opus-4-8",
+      model: llm.model,
       max_tokens: 1500,
       system: SYSTEM_PROMPT,
       tools: tools.map((t) => ({
@@ -82,7 +94,23 @@ async function liveInterpret(spec: AppSpec, instruction: string): Promise<SpecDi
     const diff = toolCallToDiff(block.name, block.input as Record<string, unknown>);
     if (diff) diffs.push(diff);
   }
-  return diffs;
+  // usage はプロキシ経路(OrcaRouter)では欠落しうるため防御的に読む。
+  // ここで落とすと「解釈は成功したのに usage 取り出しで例外→キーワードフォールバック」
+  // という live 破棄が起きるので、欠落時は undefined のまま返す(捏造しない)。
+  const u = res.usage as Anthropic.Usage | null | undefined;
+  const usage: LlmUsage | undefined = u
+    ? {
+        inputTokens: u.input_tokens ?? 0,
+        outputTokens: u.output_tokens ?? 0,
+        cacheCreationInputTokens: u.cache_creation_input_tokens ?? 0,
+        cacheReadInputTokens: u.cache_read_input_tokens ?? 0,
+      }
+    : undefined;
+  if (!usage) return { diffs, usage };
+  // 推定原価は usage の実測があるときだけ計算する(捏造しない)。
+  // getModelRates は絶対に throw しない(失敗時は定数$5/$25にフォールバック)
+  const { rates, source } = await getModelRates(llm.model, llm.route);
+  return { diffs, usage, costUsd: estimateCostUsd(usage, rates), pricingSource: source };
 }
 
 /**
@@ -110,7 +138,7 @@ export async function POST(req: Request) {
     });
   }
   const { spec, instruction } = body;
-  const hasKey = !!process.env.ANTHROPIC_API_KEY;
+  const hasKey = hasLlmClient();
 
   const encoder = new TextEncoder();
   let closed = false;
@@ -126,28 +154,37 @@ export async function POST(req: Request) {
         }
       };
 
-      const emitDiffs = (diffs: SpecDiff[]) => {
+      const emitDiffs = (
+        diffs: SpecDiff[],
+        usage?: LlmUsage,
+        costUsd?: number,
+        pricingSource?: PricingSource,
+      ) => {
         const { results } = applyDiffs(spec, diffs);
         let applied = 0;
         results.forEach((r, i) => {
           if (r.ok) applied++;
           emit({ type: "patch", diff: diffs[i], ok: r.ok, reason: r.reason, summary: r.summary });
         });
-        emit({ type: "rdone", applied });
+        emit({ type: "rdone", applied, usage, costUsd, pricingSource });
       };
 
       try {
         let diffs: SpecDiff[] = [];
+        let usage: LlmUsage | undefined;
+        let costUsd: number | undefined;
+        let pricingSource: PricingSource | undefined;
         if (hasKey) {
           emit({ type: "rphase", label: "指示を解釈しています…(ライブ)" });
           try {
-            diffs = await liveInterpret(spec, instruction);
+            ({ diffs, usage, costUsd, pricingSource } = await liveInterpret(spec, instruction));
           } catch (err) {
             console.error("reconfigure live failed:", err);
             emit({ type: "rphase", label: "ライブ解釈に失敗 — キーワード解釈に切り替えます" });
             diffs = keywordFallback(spec, instruction);
           }
           if (diffs.length === 0) {
+            // usage(と推定原価)はライブ呼び出しの実測値なので、フォールバックしても保持する
             diffs = keywordFallback(spec, instruction);
           }
         } else {
@@ -161,7 +198,7 @@ export async function POST(req: Request) {
             message: "指示を操作に変換できませんでした。言い換えてもう一度お試しください",
           });
         } else {
-          emitDiffs(diffs);
+          emitDiffs(diffs, usage, costUsd, pricingSource);
         }
       } catch (err) {
         emit({

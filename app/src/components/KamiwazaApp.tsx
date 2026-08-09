@@ -24,7 +24,13 @@ import {
 import { SCENARIOS, getScenario } from "@/lib/scenarios";
 import { PaperView } from "./PaperView";
 import { BuildPanel, type BuildState } from "./BuildPanel";
-import { SpecApp, QuestionCard, type QuestionState, type ChipState } from "./SpecApp";
+import {
+  SpecApp,
+  QuestionCard,
+  type CostState,
+  type QuestionState,
+  type ChipState,
+} from "./SpecApp";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -100,6 +106,10 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
   const [patchLog, setPatchLog] = useState<PatchLogEntry[]>([]);
   const [reconfBusy, setReconfBusy] = useState(false);
 
+  // 推定原価の累計(解析+ライブ再構成)。ライブ経路でusage実測があるときのみ非null。
+  // Undoしても減算しない(トークンは実際に消費済み=誠実)
+  const [cost, setCost] = useState<CostState | null>(null);
+
   const abortRef = useRef<AbortController | null>(null);
   const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** 最新のreconfiguredSpecを非同期処理から参照するためのref */
@@ -135,6 +145,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
     setPatches([]);
     setPatchLog([]);
     setReconfBusy(false);
+    setCost(null);
     // 進行中の再構成を無効化(世代を進め、in-flightのfetchも切る)
     reconfGenRef.current += 1;
     reconfAbortRef.current?.abort();
@@ -185,6 +196,19 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
       case "done":
         setSpec(ev.spec);
         setMode(ev.mode);
+        // 原価チップ: ライブ経路でusage実測+推定原価があるときだけ初期化。
+        // デモ再生・usage欠落時はnull(実額を捏造しない)
+        if (ev.mode === "live" && ev.usage && ev.costUsd !== undefined) {
+          setCost({
+            usd: ev.costUsd,
+            usage: ev.usage,
+            source: ev.pricingSource ?? "fallback",
+            reconfCalls: 0,
+            route: ev.llmRoute ?? null,
+          });
+        } else {
+          setCost(null);
+        }
         if (ev.mode === "demo") {
           // ライブ解析失敗→デモ続行のフォールバック時: 左の紙をリプレイ元の
           // サンプル帳票に切り替え、seedRecords/alertの参照元も揃える
@@ -453,6 +477,40 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
               }
               await sleep(220);
               if (gen !== reconfGenRef.current) return;
+            } else if (ev.type === "rdone") {
+              // ライブ解釈がAPIを呼んだときのみ原価を累計に加算する
+              // (キーワードフォールバック単独=usageなしは加算しない。捏造しない)
+              if (ev.costUsd !== undefined && ev.usage) {
+                const { usage: u, costUsd, pricingSource } = ev;
+                setCost((c) =>
+                  c
+                    ? {
+                        usd: Math.round((c.usd + costUsd) * 1e6) / 1e6,
+                        usage: {
+                          inputTokens: c.usage.inputTokens + u.inputTokens,
+                          outputTokens: c.usage.outputTokens + u.outputTokens,
+                          cacheCreationInputTokens:
+                            c.usage.cacheCreationInputTokens + u.cacheCreationInputTokens,
+                          cacheReadInputTokens:
+                            c.usage.cacheReadInputTokens + u.cacheReadInputTokens,
+                        },
+                        // 1回でもfallback単価を含んだ累計は全体をfallback扱い(保守側に倒す)
+                        source:
+                          c.source === "fallback" || pricingSource !== "live"
+                            ? "fallback"
+                            : "live",
+                        reconfCalls: c.reconfCalls + 1,
+                        route: c.route,
+                      }
+                    : {
+                        usd: costUsd,
+                        usage: u,
+                        source: pricingSource ?? "fallback",
+                        reconfCalls: 1,
+                        route: null,
+                      },
+                );
+              }
             } else if (ev.type === "rerror") {
               setPatchLog((l) => [...l, { summary: ev.message, ok: false }]);
             }
@@ -684,6 +742,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
               records={records}
               alert={mode === "demo" ? scenario.alert : null}
               mode={mode}
+              cost={mode === "live" ? cost : null}
               onHighlight={setHighlight}
               question={question}
               onAnswer={answerQuestion}

@@ -11,6 +11,8 @@ import type {
   SourceBox,
   RecordValue,
 } from "@/lib/appspec";
+import type { LlmUsage, PricingSource } from "@/lib/events";
+import type { LlmRoute } from "@/lib/llm-client";
 import {
   checkLimit,
   roiSummary,
@@ -20,6 +22,22 @@ import {
 import { FIELD_TYPE_META, ConfidenceBadge } from "./field-meta";
 
 type Tab = "form" | "list" | "dashboard";
+
+/**
+ * 推定原価の累計(解析+ライブ再構成)。
+ * トークン実測×公表単価の保守的上限であり、課金の正はプロバイダのダッシュボード。
+ */
+export interface CostState {
+  /** 累計の推定原価(USD) */
+  usd: number;
+  /** 累計のトークン内訳(実測) */
+  usage: LlmUsage;
+  /** 1回でもfallback単価を含めば "fallback"(保守側に倒す) */
+  source: PricingSource;
+  /** ライブ再構成の回数 */
+  reconfCalls: number;
+  route: LlmRoute | null;
+}
 
 export interface QuestionState {
   fieldId: string;
@@ -37,6 +55,8 @@ interface SpecAppProps {
   records: AppRecord[];
   alert: string | null;
   mode: "demo" | "live";
+  /** ライブ経路の推定原価チップ。デモ・usage欠落時はnull(実額を捏造しない) */
+  cost: CostState | null;
   onHighlight: (box: SourceBox | null) => void;
   question: QuestionState | null;
   onAnswer: (choiceIndex: number) => void;
@@ -657,6 +677,43 @@ function downloadCsv(spec: AppSpec, records: AppRecord[]) {
   downloadBlob([header, ...rows].join("\n"), `${spec.appName}.csv`);
 }
 
+/* ---------- 原価チップ(誠実表示) ---------- */
+
+/** 参考換算のみ。課金はUSD(プロバイダのダッシュボードが正) */
+const USD_JPY_REFERENCE_RATE = 150;
+
+function fmtYen(usd: number): string {
+  const yen = usd * USD_JPY_REFERENCE_RATE;
+  return yen < 10 ? yen.toFixed(1) : String(Math.round(yen));
+}
+
+/**
+ * 推定原価の詳細行(ヘッダ下トグル+hoverのtitle兼用)。
+ * 「トークン実測×公表単価の保守的上限」であることを隠さず示す。
+ */
+function costDetailLines(cost: CostState): string[] {
+  const u = cost.usage;
+  const breakdown = [
+    `入力 ${u.inputTokens.toLocaleString()}`,
+    `キャッシュ読取 ${u.cacheReadInputTokens.toLocaleString()}`,
+    ...(u.cacheCreationInputTokens > 0
+      ? [`キャッシュ作成 ${u.cacheCreationInputTokens.toLocaleString()}`]
+      : []),
+    `出力 ${u.outputTokens.toLocaleString()}`,
+  ].join(" + ");
+  const rateSource =
+    cost.source === "live"
+      ? "OrcaRouter /v1/models 実測単価"
+      : "公表値の定数単価(実測取得失敗時のフォールバック)";
+  const billingRef = cost.route === "anthropic" ? "Anthropicコンソール" : "OrcaRouterダッシュボード";
+  return [
+    `${breakdown} tok × $5/$25 per 1Mtok(${rateSource})`,
+    "キャッシュ割引前の上限推定(cache_read/cache_creation とも入力単価で満額計上。割引後の正値はダッシュボード)",
+    `課金の正: ${billingRef}(この推定と突合可)・$1=¥${USD_JPY_REFERENCE_RATE} 参考換算`,
+    ...(cost.reconfCalls > 0 ? [`再構成${cost.reconfCalls}回を含む累計`] : []),
+  ];
+}
+
 /* ---------- 本体 ---------- */
 
 export function SpecApp({
@@ -664,6 +721,7 @@ export function SpecApp({
   records,
   alert,
   mode,
+  cost,
   onHighlight,
   question,
   onAnswer,
@@ -676,6 +734,7 @@ export function SpecApp({
   busy,
 }: SpecAppProps) {
   const [tab, setTab] = useState<Tab>("form");
+  const [costOpen, setCostOpen] = useState(false);
   const first = records[0];
 
   const tabs: { id: Tab; label: string }[] = [
@@ -708,6 +767,31 @@ export function SpecApp({
             <div className="font-bold">{spec.appName}</div>
             <div className="text-dim text-[11px] truncate">{spec.description}</div>
           </div>
+          {/* 原価チップ: ライブ=トークン実測×公表単価の推定累計 / デモ=$0の誠実表示。
+              朱(--accent)は警告・赤発火の色なので原価には使わない(墨系ピル) */}
+          {mode === "live" && cost && (
+            <button
+              onClick={() => setCostOpen((o) => !o)}
+              className="text-[10px] rounded-full px-2.5 py-1 shrink-0 bg-panel border border-line hover:border-dim transition-colors cursor-pointer whitespace-nowrap"
+              title={costDetailLines(cost).join("\n")}
+            >
+              <span className="text-dim">原価 </span>
+              <span className="text-fg font-bold">${cost.usd.toFixed(3)}</span>
+              <span className="hidden sm:inline text-dim">
+                (約¥{fmtYen(cost.usd)}・参考換算)
+                {cost.source === "fallback" && " ※定数単価"}
+              </span>
+            </button>
+          )}
+          {mode === "demo" && (
+            <span
+              className="text-[10px] rounded-full px-2.5 py-1 shrink-0 bg-panel border border-line text-dim whitespace-nowrap"
+              title="サンプルカードは決定論リプレイでAPIを呼びません。実額はライブ解析時のみ表示"
+            >
+              <span className="sm:hidden">原価 $0</span>
+              <span className="hidden sm:inline">デモ再生: LLM呼び出しなし(原価 $0)</span>
+            </span>
+          )}
           <span
             className={`text-[10px] rounded-full px-2.5 py-1 font-bold shrink-0 ${
               mode === "live" ? "bg-ok/15 text-ok" : "bg-accent-soft text-accent"
@@ -716,6 +800,17 @@ export function SpecApp({
             {mode === "live" ? "● LIVE解析" : "● デモリプレイ"}
           </span>
         </div>
+
+        {/* 原価の内訳(チップをクリックでトグル)— 推定の方法と限界を隠さない */}
+        {mode === "live" && cost && costOpen && (
+          <div className="px-5 py-2 border-b border-line text-[11px] leading-5 text-dim">
+            {costDetailLines(cost).map((line, i) => (
+              <div key={i} className={i === 0 ? "text-fg" : undefined}>
+                {line}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* 承認フロー */}
         {spec.approvalFlow && spec.approvalFlow.length > 0 && (
