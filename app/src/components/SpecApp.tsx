@@ -19,9 +19,36 @@ import {
   type CommandChip,
   type PatchLogEntry,
 } from "@/lib/specdiff";
+import { INTERACTIVE_SELECTOR } from "@/lib/highlight";
 import { FIELD_TYPE_META, ConfidenceBadge } from "./field-meta";
 
 type Tab = "form" | "list" | "dashboard";
+
+/* ---------- タッチ/ホバー判定 ---------- */
+
+/**
+ * ホバーが使えるポインタ環境か(iPadの指操作ではfalse)。
+ * iOS Safariはタップ時にmouseenterを合成発火するため、CSSと同じ条件で
+ * JS側のhoverハンドラもゲートしないと「タップでトグル→合成hoverが即上書き」が起きる。
+ * イベントごとに評価する(iPadへのトラックパッド接続/切断にも追従)。
+ */
+const canHover = () =>
+  typeof window !== "undefined" &&
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(hover: hover)").matches;
+
+/**
+ * タップがinput等のインタラクティブ要素上か(行タップのトグルから除外する)。
+ * 例外: 制御対象を持たないlabel(フィールド見出し用途)は行の一部として扱う —
+ * 見出しテキストはタップの最有力ターゲットであり、除外すると発火しない場所が生まれる。
+ */
+const isInteractiveTarget = (target: EventTarget | null) => {
+  if (!(target instanceof Element)) return false;
+  const el = target.closest(INTERACTIVE_SELECTOR);
+  if (!el) return false;
+  if (el instanceof HTMLLabelElement && !el.control) return false;
+  return true;
+};
 
 /**
  * 推定原価の累計(解析+ライブ再構成)。
@@ -58,6 +85,8 @@ interface SpecAppProps {
   /** ライブ経路の推定原価チップ。デモ・usage欠落時はnull(実額を捏造しない) */
   cost: CostState | null;
   onHighlight: (box: SourceBox | null) => void;
+  /** タップ用: 同じ出典の再タップで解除、別の出典で切り替え(lib/highlight.tsの規則) */
+  onHighlightToggle: (box: SourceBox) => void;
   question: QuestionState | null;
   onAnswer: (choiceIndex: number) => void;
   /* --- 日本語で書いて直す --- */
@@ -115,7 +144,8 @@ export function QuestionCard({
                   key={i}
                   onClick={() => onAnswer(i)}
                   disabled={disabled}
-                  className={`rounded-lg px-3.5 py-1.5 text-sm font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default ${
+                  // タッチ端末はHIG 44ptを満たす高さへ(デスクトップは従来サイズ)
+                  className={`rounded-lg px-3.5 py-1.5 pointer-coarse:px-5 pointer-coarse:py-3 text-sm font-medium transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default ${
                     i === 0
                       ? "bg-accent text-white hover:opacity-85"
                       : "border border-line text-dim hover:text-fg hover:border-dim"
@@ -199,7 +229,8 @@ function CommandBar({
           <button
             onClick={onUndo}
             disabled={busy}
-            className="rounded-lg border border-line px-3 py-2 text-sm text-dim hover:text-fg hover:border-dim disabled:opacity-40 transition-colors cursor-pointer shrink-0"
+            // タッチ端末は見た目を変えず疑似要素でヒット領域だけ44pt相当へ拡張
+            className="relative rounded-lg border border-line px-3 py-2 text-sm text-dim hover:text-fg hover:border-dim disabled:opacity-40 transition-colors cursor-pointer shrink-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-1 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
             title="直前の変更を元に戻す"
           >
             ↩ 戻す
@@ -214,7 +245,8 @@ function CommandBar({
               key={chip.id}
               onClick={() => onChip(chip)}
               disabled={busy || chip.disabled}
-              className={`rounded-full px-3 py-1 text-xs font-medium border transition-colors cursor-pointer ${
+              // 日本語で書いて直すの主動線。タッチ端末では44pt確保のため大きめに描画
+              className={`rounded-full px-3 py-1 text-xs pointer-coarse:px-4 pointer-coarse:py-3 pointer-coarse:text-sm font-medium border transition-colors cursor-pointer ${
                 chip.disabled
                   ? "border-line text-dim/50 line-through cursor-default"
                   : "border-accent/50 text-accent hover:bg-accent-soft"
@@ -265,12 +297,14 @@ function FormField({
   value,
   confirmed,
   onHighlight,
+  onHighlightToggle,
   roiNote,
 }: {
   field: FieldSpec;
   value: RecordValue | undefined;
   confirmed: boolean;
   onHighlight: (box: SourceBox | null) => void;
+  onHighlightToggle: (box: SourceBox) => void;
   roiNote?: string | null;
 }) {
   const tm = FIELD_TYPE_META[field.type];
@@ -336,6 +370,8 @@ function FormField({
             <div className="flex items-center gap-2">
               <input
                 type="number"
+                // iOSで数値最適化キーボードを出す(小数・マイナスも入力可能な配列)
+                inputMode="decimal"
                 value={draft ?? ""}
                 onChange={(e) => {
                   const n = e.target.valueAsNumber;
@@ -387,8 +423,19 @@ function FormField({
   return (
     <div
       className="group rounded-xl border border-transparent hover:border-accent/40 hover:bg-accent-soft/40 px-3 py-2 -mx-3 transition-colors"
-      onMouseEnter={() => field.sourceBox && onHighlight(field.sourceBox)}
-      onMouseLeave={() => onHighlight(null)}
+      // ホバー(デスクトップ): iOSの合成mouseenterを誤発火させないようcanHoverでゲート
+      onMouseEnter={() => canHover() && field.sourceBox && onHighlight(field.sourceBox)}
+      onMouseLeave={() => canHover() && onHighlight(null)}
+      // フォーカス(タッチ・キーボード共通): inputタップ=フォーカスで自然に光り、blurで消える
+      onFocusCapture={() => field.sourceBox && onHighlight(field.sourceBox)}
+      onBlurCapture={() => onHighlight(null)}
+      // タップ(ホバー不能端末のみ): input以外の行タップでトグル。
+      // 解除規則 = 同じ行の再タップで解除 / 別の出典タップで切り替え
+      onClick={(e) => {
+        if (canHover() || !field.sourceBox) return;
+        if (isInteractiveTarget(e.target)) return;
+        onHighlightToggle(field.sourceBox);
+      }}
     >
       <div className="flex items-center gap-2 mb-1.5">
         <span className="text-xs">{tm.icon}</span>
@@ -406,8 +453,9 @@ function FormField({
           </span>
         )}
         {field.sourceBox && (
+          // タッチ端末ではhoverで出せないため常時表示(デスクトップは従来どおりhoverで出現)
           <span
-            className="text-[10px] text-dim opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+            className="text-[10px] text-dim opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0"
             title="元の紙のどこから読み取ったか"
           >
             ← 紙の出典
@@ -537,17 +585,33 @@ function Chart({ spec, records }: { spec: AppSpec; records: AppRecord[] }) {
 function LineItemsTable({
   spec,
   onHighlight,
+  onHighlightToggle,
 }: {
   spec: AppSpec;
   onHighlight: (box: SourceBox | null) => void;
+  onHighlightToggle: (box: SourceBox) => void;
 }) {
   const li = spec.lineItems;
   if (!li || spec.firstRecordLines.length === 0) return null;
+  // 上限/下限違反の一覧。デスクトップはセルのtitleで見えるが、タッチでは
+  // ツールチップが出ないため、タッチ端末のみ表の下に可視サマリとして出す
+  const violations = spec.firstRecordLines.flatMap((line, i) =>
+    li.columns.flatMap((c) => {
+      const viol = c.type === "number" ? checkLimit(c, line[c.id]) : null;
+      return viol ? [{ row: i + 1, col: c, viol }] : [];
+    }),
+  );
   return (
     <div
       className="group rounded-xl border border-transparent hover:border-accent/40 hover:bg-accent-soft/40 px-3 py-2 -mx-3 transition-colors"
-      onMouseEnter={() => li.sourceBox && onHighlight(li.sourceBox)}
-      onMouseLeave={() => onHighlight(null)}
+      onMouseEnter={() => canHover() && li.sourceBox && onHighlight(li.sourceBox)}
+      onMouseLeave={() => canHover() && onHighlight(null)}
+      // 明細にinputはないため、タッチではブロック全体がタップでトグル
+      onClick={(e) => {
+        if (canHover() || !li.sourceBox) return;
+        if (isInteractiveTarget(e.target)) return;
+        onHighlightToggle(li.sourceBox);
+      }}
     >
       <div className="flex items-center gap-2 mb-1.5">
         <span className="text-xs">🧮</span>
@@ -557,7 +621,7 @@ function LineItemsTable({
         </span>
         {li.sourceBox && (
           <span
-            className="text-[10px] text-dim opacity-0 group-hover:opacity-100 transition-opacity ml-auto shrink-0"
+            className="text-[10px] text-dim opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity ml-auto shrink-0"
             title="元の紙のどこから読み取ったか"
           >
             ← 紙の出典
@@ -621,6 +685,20 @@ function LineItemsTable({
           </tbody>
         </table>
       </div>
+      {/* タッチ端末のみ: セルtitle(ツールチップ)の可視代替。
+          FormField側は違反詳細が常時可視テキストなので、明細側だけ欠けていた */}
+      {violations.length > 0 && (
+        <div className="hidden pointer-coarse:block mt-1.5 text-xs text-accent font-medium leading-5">
+          {violations.map((v, i) => (
+            <div key={i}>
+              ⚠ {v.row}行目 {v.col.label}: {v.viol.kind === "max" ? "上限" : "下限"}{" "}
+              {v.viol.limit.toLocaleString()}
+              {v.col.unit ?? ""} を {v.viol.amount.toLocaleString()}
+              {v.col.unit ?? ""} {v.viol.kind === "max" ? "超過" : "下回り"}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -723,6 +801,7 @@ export function SpecApp({
   mode,
   cost,
   onHighlight,
+  onHighlightToggle,
   question,
   onAnswer,
   chips,
@@ -735,6 +814,8 @@ export function SpecApp({
 }: SpecAppProps) {
   const [tab, setTab] = useState<Tab>("form");
   const [costOpen, setCostOpen] = useState(false);
+  // デモ$0チップの説明(title)はタッチで見えないため、タップで開ける詳細行を持つ
+  const [demoOpen, setDemoOpen] = useState(false);
   const first = records[0];
 
   const tabs: { id: Tab; label: string }[] = [
@@ -772,7 +853,8 @@ export function SpecApp({
           {mode === "live" && cost && (
             <button
               onClick={() => setCostOpen((o) => !o)}
-              className="text-[10px] rounded-full px-2.5 py-1 shrink-0 bg-panel border border-line hover:border-dim transition-colors cursor-pointer whitespace-nowrap"
+              // ▸/▾で「押すと開く」ことを可視化し、タッチでは疑似要素でヒット領域を44pt相当へ
+              className="relative text-[10px] rounded-full px-2.5 py-1 shrink-0 bg-panel border border-line hover:border-dim transition-colors cursor-pointer whitespace-nowrap pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
               title={costDetailLines(cost).join("\n")}
             >
               <span className="text-dim">原価 </span>
@@ -781,16 +863,20 @@ export function SpecApp({
                 (約¥{fmtYen(cost.usd)}・参考換算)
                 {cost.source === "fallback" && " ※定数単価"}
               </span>
+              <span className="text-dim ml-1">{costOpen ? "▾" : "▸"}</span>
             </button>
           )}
           {mode === "demo" && (
-            <span
-              className="text-[10px] rounded-full px-2.5 py-1 shrink-0 bg-panel border border-line text-dim whitespace-nowrap"
+            // titleツールチップはタッチで見えないため、タップで下に説明行を開くbutton化
+            <button
+              onClick={() => setDemoOpen((o) => !o)}
+              className="relative text-[10px] rounded-full px-2.5 py-1 shrink-0 bg-panel border border-line hover:border-dim transition-colors cursor-pointer text-dim whitespace-nowrap pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
               title="サンプルカードは決定論リプレイでAPIを呼びません。実額はライブ解析時のみ表示"
             >
               <span className="sm:hidden">原価 $0</span>
               <span className="hidden sm:inline">デモ再生: LLM呼び出しなし(原価 $0)</span>
-            </span>
+              <span className="ml-1">{demoOpen ? "▾" : "▸"}</span>
+            </button>
           )}
           <span
             className={`text-[10px] rounded-full px-2.5 py-1 font-bold shrink-0 ${
@@ -809,6 +895,13 @@ export function SpecApp({
                 {line}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* デモ$0の説明(チップをタップでトグル)— titleツールチップのタッチ代替 */}
+        {mode === "demo" && demoOpen && (
+          <div className="px-5 py-2 border-b border-line text-[11px] leading-5 text-dim">
+            サンプルカードは決定論リプレイでAPIを呼びません。実額はライブ解析時のみ表示されます
           </div>
         )}
 
@@ -847,7 +940,8 @@ export function SpecApp({
           ))}
           <button
             onClick={() => downloadCsv(spec, records)}
-            className="ml-auto my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            // タッチ端末は疑似要素でヒット領域だけ縦に拡張(タブ行の高さは変えない)
+            className="relative ml-auto my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
             title="Excelで開けるCSVを書き出し"
           >
             ⬇ CSV
@@ -855,7 +949,7 @@ export function SpecApp({
           {spec.lineItems && spec.firstRecordLines.length > 0 && (
             <button
               onClick={() => downloadLinesCsv(spec)}
-              className="ml-2 my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="relative ml-2 my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
               title="明細行をCSVで書き出し"
             >
               ⬇ 明細CSV
@@ -868,7 +962,10 @@ export function SpecApp({
           <div hidden={tab !== "form"}>
             <div className="p-5 flex flex-col gap-1.5">
               <div className="text-[11px] text-dim mb-2">
-                項目にカーソルを合わせると、<span className="text-accent">元の紙のどこから読み取ったか</span>が光ります
+                {/* 操作ガイドはポインタ種別で出し分け(タッチにマウス前提の説明を出さない) */}
+                <span className="pointer-coarse:hidden">項目にカーソルを合わせると</span>
+                <span className="hidden pointer-coarse:inline">項目をタップすると</span>
+                、<span className="text-accent">元の紙のどこから読み取ったか</span>が光ります
               </div>
               {spec.fields.map((f) => (
                 <FormField
@@ -877,6 +974,7 @@ export function SpecApp({
                   value={first?.[f.id]}
                   confirmed={question?.fieldId === f.id && question.answer === 0}
                   onHighlight={onHighlight}
+                  onHighlightToggle={onHighlightToggle}
                   roiNote={
                     f.type === "number" && checkLimit(f, first?.[f.id])
                       ? roiSummary(f, records)
@@ -884,7 +982,11 @@ export function SpecApp({
                   }
                 />
               ))}
-              <LineItemsTable spec={spec} onHighlight={onHighlight} />
+              <LineItemsTable
+                spec={spec}
+                onHighlight={onHighlight}
+                onHighlightToggle={onHighlightToggle}
+              />
             </div>
           </div>
 
