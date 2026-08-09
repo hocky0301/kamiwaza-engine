@@ -6,6 +6,19 @@
 //
 // stripCodeFences はdeltaごとに蓄積バッファ全体へ適用する前提で設計されている
 // (buffer蓄積時に除去すると、フェンスがdelta境界で分割された場合に取り逃す)。
+//
+// 重複デルタ(同一チャンク二重適用)への耐性について — 三重保険 第3層:
+// テキストレベルでの完全な検出・冪等化は原理的に不可能である。
+// - 文字列リテラル内の重複(「出荷指示管理理」型)は有効なJSONのまま → 検出不能
+// - メンバー境界をまたぐ重複は重複キーになり JSON.parse が last-wins で黙って吸収 → 検出不能
+// - 正当なモデル出力にも同一デルタの連続は普通に現れる(「昨日」「日」等)ため、
+//   連続一致チャンクの抑制は正常系を壊す
+// さらに SDK の finalMessage() も同一SSEイベント列から蓄積するため、転送層で重複が
+// 起きた場合は done.spec にも同相で乗る(共通モード故障)。
+// このモジュールで守れるのは「末尾の構造文字重複でストリーミング表示が退化する」
+// ケースまで(tryParsePartial の extractBalancedJson 救済)。中間位置の構造重複は
+// 最終パース失敗→throw→デモフォールバックで検出される。それ以外の破損に対する
+// 最終防衛は KamiwazaApp の done.spec 照合・復元(reconcile.ts)が担う。
 
 /**
  * コードフェンス(```json ... ```)や前置の散文を許容して、JSON本体だけを取り出す。
@@ -38,6 +51,13 @@ export function tryParsePartial(buf: string): Record<string, unknown> | null {
   if (!src) return null;
 
   const candidates = [src];
+  // 末尾に構造ゴミ(重複デルタによる "}" 二重適用など)が付いたバッファの救済:
+  // 先頭の完結したJSONが取り出せるならそれを第2候補にする。これがないと下の
+  // last-comma 救済が「fieldsごと切り詰めた別物」を成功として返してしまう
+  // (攻撃2再現調査の発見事項)。正常なストリーミング途中のバッファは未完結なので
+  // extractBalancedJson は null を返し、従来挙動は変わらない。
+  const balanced = extractBalancedJson(src);
+  if (balanced !== null && balanced !== src) candidates.push(balanced);
   const lastComma = src.lastIndexOf(",");
   if (lastComma > 0) candidates.push(src.slice(0, lastComma));
 

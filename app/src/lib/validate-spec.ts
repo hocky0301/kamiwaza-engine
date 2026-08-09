@@ -186,10 +186,52 @@ export function validate(schema: SchemaNode, data: unknown, path = "$"): Validat
   return errors;
 }
 
+/* ---------- 意味検査: 画面が成立する最低条件(三重保険 第1層) ---------- */
+
 /**
- * ライブ解析の最終JSONを ANALYZE_OUTPUT_JSON_SCHEMA で検証する。
- * 生成途中の部分バッファには適用しないこと(required欠落が正常なため)。
+ * fields の最小件数。攻撃2(審査員シミュレーション)で「fields 0件のspecが検証を通過し
+ * 空フォームが描画される」実害が観測されたことへの対策。
+ *
+ * 閾値は保守的に 1: 実在企業の実スキャン帳票50枚の検証(docs/05)では全帳票で複数の
+ * フィールドが抽出されており、正常なライブ解析が fields 0件になることはない。
+ * 逆に fields 0件のspecは SpecApp で必ず空フォームになる(=画面が成立しない)ため、
+ * 失格→デモフォールバックが常に正しい判断になる。閾値を2以上にすると
+ * 「項目が本当に1つしかない紙」を誤失格させるリスクが生じるため上げない。
+ */
+export const MIN_FIELDS = 1;
+
+/**
+ * 構造検査(JSON Schema)を素通りする「空殻spec」を失格させる意味検査。
+ * 違反は validateAnalyzeOutput() 経由で既存の
+ * 「validation違反→throw→デモフォールバック」連鎖(claude-live.ts)に乗る。
+ *
+ * なぜ ANALYZE_OUTPUT_JSON_SCHEMA に minItems / minLength を宣言しないのか:
+ * このスキーマは claude-live.ts で structured outputs(output_config.format.schema)として
+ * APIへそのまま送信されるが、structured outputs は配列制約(minItems)・文字列制約
+ * (minLength)をサポートしない(FieldSpec.min/max を意図的に非搭載にしたのと同じ制約。
+ * appspec.test.ts「min/max は意図的に非搭載」参照)。ワイヤスキーマに足すと
+ * 直接Anthropic経路のリクエスト自体を壊しうるため、アプリ側の意味検査層として実装する。
+ *
+ * 型違い(fieldsが配列でない等)はここでは報告しない — それは構造検査 validate() の
+ * 責務で、二重報告すると違反件数が水増しされる。ここは「構造は正しいのに空」だけを見る。
+ */
+export function validateSpecMinimums(data: unknown): ValidationError[] {
+  const errors: ValidationError[] = [];
+  if (!isPlainObject(data)) return errors;
+  if (Array.isArray(data.fields) && data.fields.length < MIN_FIELDS) {
+    errors.push({ path: "$.fields", keyword: "minItems" });
+  }
+  if (typeof data.appName === "string" && data.appName.trim() === "") {
+    errors.push({ path: "$.appName", keyword: "minLength" });
+  }
+  return errors;
+}
+
+/**
+ * ライブ解析の最終JSONを検証する: 構造検査(ANALYZE_OUTPUT_JSON_SCHEMA)+
+ * 意味検査(validateSpecMinimums)。生成途中の部分バッファには適用しないこと
+ * (required欠落・fields空が正常なため)。
  */
 export function validateAnalyzeOutput(data: unknown): ValidationError[] {
-  return validate(ANALYZE_OUTPUT_SCHEMA, data);
+  return [...validate(ANALYZE_OUTPUT_SCHEMA, data), ...validateSpecMinimums(data)];
 }
