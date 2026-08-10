@@ -38,6 +38,7 @@ import {
   type QuestionState,
   type ChipState,
 } from "./SpecApp";
+import type { LlmRoute } from "@/lib/llm-client";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -88,7 +89,14 @@ async function downscaleImage(file: File): Promise<UploadedImage> {
   };
 }
 
-export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
+export function KamiwazaApp({
+  liveAvailable,
+  liveRoute = null,
+}: {
+  liveAvailable: boolean;
+  /** ライブ経路の実値。バッジの説明文を実際の経路に一致させる(誤表示防止・F08) */
+  liveRoute?: LlmRoute | null;
+}) {
   const [screen, setScreen] = useState<Screen>("select");
   const [scenarioId, setScenarioId] = useState("chumonsho");
   const [uploaded, setUploaded] = useState<UploadedImage | null>(null);
@@ -598,6 +606,14 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
   );
 
   /** タップ発火用: 同じ出典の再タップで解除、別の出典で切り替え(規則はlib/highlight.ts) */
+  // バッジの説明は実際の経路に一致させる。OrcaRouter経由なのに
+  // 「ANTHROPIC_API_KEY が設定されています」と出ると、審査員に直結運用と誤解される
+  const liveStatusText = !liveAvailable
+    ? "APIキーなしでも完全動作するデモモードで動いています"
+    : liveRoute === "orcarouter"
+      ? "OrcaRouter 経由でライブ解析が使えます(ORCAROUTER_API_KEY)"
+      : "Anthropic に直結してライブ解析が使えます(ANTHROPIC_API_KEY)";
+
   const handleHighlightToggle = useCallback((box: SourceBox) => {
     setHighlight((cur) => toggleHighlight(cur, box));
   }, []);
@@ -649,18 +665,14 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
               liveAvailable ? "bg-ok/15 text-ok" : "bg-accent-soft text-accent"
             }`}
             title={
-              liveAvailable
-                ? "ANTHROPIC_API_KEY が設定されています。写真のライブ解析が使えます"
-                : "APIキーなしでも完全動作するデモモードで動いています"
+              liveStatusText
             }
           >
             {liveAvailable ? "LIVE READY" : "DEMO MODE"}
           </button>
           {statusInfoOpen && (
             <span className="absolute right-0 top-full mt-2 z-30 block w-64 card p-3 text-xs leading-relaxed text-dim font-normal text-left whitespace-normal shadow-xl">
-              {liveAvailable
-                ? "ANTHROPIC_API_KEY が設定されています。写真のライブ解析が使えます"
-                : "APIキーなしでも完全動作するデモモードで動いています"}
+              {liveStatusText}
             </span>
           )}
         </span>
@@ -745,7 +757,7 @@ export function KamiwazaApp({ liveAvailable }: { liveAvailable: boolean }) {
               <div className="text-dim text-xs leading-relaxed">
                 {liveAvailable
                   ? "手元の帳票を撮影して、Claude Vision でライブ解析します"
-                  : "ANTHROPIC_API_KEY を設定すると、実物の紙のライブ解析が有効になります"}
+                  : "ORCAROUTER_API_KEY または ANTHROPIC_API_KEY を設定すると、実物の紙のライブ解析が有効になります"}
               </div>
             </label>
           </div>

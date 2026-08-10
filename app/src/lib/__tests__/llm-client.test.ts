@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -131,5 +132,22 @@ describe("getLlmClient: 経路に応じたクライアント構成", () => {
 
     stubEnv({ anthropic: "sk-ant", forceDirect: "1" });
     expect(getLlmClient("claude-sonnet-4-6")!.model).toBe("claude-sonnet-4-6");
+  });
+});
+
+describe("UIのライブ可否判定の一致(F08 回帰)", () => {
+  // page.tsx が ANTHROPIC_API_KEY を直接見ていたため、OrcaRouterキーのみの構成で
+  // 「サーバーはライブ解析できるのに UI は DEMO MODE・撮影ボタン disabled」になっていた。
+  // ブースでライブ実演が起動できなくなる事故なので、判定の一本化をテストで固定する。
+  it("OrcaRouterキーのみでもライブ可(撮影ボタンを有効にすべき状態)", () => {
+    stubEnv({ orca: "orca-key" });
+    expect(hasLlmClient()).toBe(true);
+    expect(resolveLlmRoute()).toBe("orcarouter");
+  });
+
+  it("page.tsx はライブ可否を ANTHROPIC_API_KEY で判定しない(resolveLlmRoute に一本化)", () => {
+    const src = readFileSync(new URL("../../app/page.tsx", import.meta.url), "utf8");
+    expect(src).toContain("resolveLlmRoute");
+    expect(src).not.toMatch(/process\.env\.ANTHROPIC_API_KEY/);
   });
 });
