@@ -71,32 +71,42 @@ function isCompleteField(f: unknown): f is FieldSpec {
  * (FAXヘッダだけ正向きのケースもあるため、本文基準で判定させる)。
  * 返り値は「時計回りに何度回すと正しい向きになるか」。
  */
+/** 回転判定ツール。tool_choice で強制するため、応答は tool_use ブロックの input に閉じる */
+const ROTATION_TOOL: Anthropic.Tool = {
+  name: "report_rotation",
+  description:
+    "画像の本文を正しく読める向きにするために必要な時計回りの回転角を報告する",
+  input_schema: {
+    type: "object",
+    properties: {
+      rotation: {
+        type: "integer",
+        enum: [0, 90, 180, 270],
+        description: "時計回りに回転させるべき角度",
+      },
+    },
+    required: ["rotation"],
+    additionalProperties: false,
+  },
+};
+
+const VALID_ROTATIONS: readonly number[] = [0, 90, 180, 270];
+
 async function askRotationOnce(
   client: Anthropic,
   model: string,
   data: string,
   mediaType: SupportedMedia,
 ): Promise<{ vote: Rotation | null; usage: Anthropic.Usage | null }> {
+  // OrcaRouter経路では output_config(structured outputs)が透過されない(公式docsで
+  // Anthropic宛は非対応・tool_use推奨と明記=C30)。tool_choice によるツール強制は
+  // 透過するため、スキーマ制約はツール入力で掛ける(2026-08-11実測: 7/7でクリーンな
+  // tool_use ブロック・全問正解)。テキストで返ってきた場合の散文パースは保険として残す。
   const res = await client.messages.create({
     model,
-    max_tokens: 200,
-    output_config: {
-      format: {
-        type: "json_schema",
-        schema: {
-          type: "object",
-          properties: {
-            rotation: {
-              type: "integer",
-              enum: [0, 90, 180, 270],
-              description: "時計回りに回転させるべき角度",
-            },
-          },
-          required: ["rotation"],
-          additionalProperties: false,
-        },
-      },
-    },
+    max_tokens: 256,
+    tools: [ROTATION_TOOL],
+    tool_choice: { type: "tool", name: "report_rotation" },
     messages: [
       {
         role: "user",
@@ -107,9 +117,7 @@ async function askRotationOnce(
           },
           {
             type: "text",
-            // OrcaRouter経路では output_config が透過されずスキーマ強制が効かないため、
-            // 出力形式の指示をプロンプト本文にも重ねて書く(F07)
-            text: 'この事務書類のスキャン画像を、本文が正しく読める向きにするには時計回りに何度回転させる必要がありますか。注意: FAX送信ヘッダ(最上部の細い送信情報行)は本文と逆向きに印字されることがあります。必ず本文(タイトル・表・記入内容)の向きを基準に判定してください。回答は {"rotation": 0} のようなJSONのみで返してください(0/90/180/270のいずれか)。説明文は不要です。',
+            text: "この事務書類のスキャン画像を、本文が正しく読める向きにするには時計回りに何度回転させる必要がありますか。注意: FAX送信ヘッダ(最上部の細い送信情報行)は本文と逆向きに印字されることがあります。必ず本文(タイトル・表・記入内容)の向きを基準に判定し、report_rotation で報告してください。",
           },
         ],
       },
@@ -117,6 +125,15 @@ async function askRotationOnce(
   });
   const usage = res.usage ?? null;
   if (res.stop_reason === "refusal") return { vote: 0, usage };
+  const toolUse = res.content.find((b) => b.type === "tool_use");
+  if (toolUse) {
+    const rotation = (toolUse.input as { rotation?: unknown }).rotation;
+    if (typeof rotation === "number" && VALID_ROTATIONS.includes(rotation)) {
+      return { vote: rotation as Rotation, usage };
+    }
+    return { vote: null, usage }; // スキーマ外のツール入力は判定不能扱い
+  }
+  // ツール強制が効かずテキストで返った場合の保険(F07の散文パース)
   const text = res.content.find((b) => b.type === "text")?.text;
   if (!text) return { vote: null, usage }; // 空content(2026-08-09実測)は判定不能扱い
   return { vote: parseRotationResponse(text), usage };
