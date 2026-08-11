@@ -13,10 +13,11 @@ npm run dev     # http://localhost:3000
 
 ```bash
 # app/.env.local(gitignore 済み・絶対にコミットしない)
-ANTHROPIC_API_KEY=sk-ant-...
+ORCAROUTER_API_KEY=sk-orca-...   # 推奨(OrcaRouter経由)
+ANTHROPIC_API_KEY=sk-ant-...     # 障害時の直結保険(LLM_FORCE_DIRECT=1 で強制)
 ```
 
-キーがあると「自分の紙を撮る」が有効になり、Claude Vision(`claude-opus-4-8`)が実画像を解析する。失敗時は自動でデモリプレイにフォールバックする。
+キーがあると「自分の紙を撮る」が有効になり、Claude Vision が実画像を解析する(モデルIDは直接経路 `claude-opus-4-8`、OrcaRouter経由はドット表記 `anthropic/claude-opus-4.8` へ変換=`src/lib/llm-client.ts`)。失敗時は自動でデモリプレイにフォールバックする。
 
 ## テスト・検査
 
@@ -38,13 +39,21 @@ src/
 │       ├── analyze/route.ts        解析 SSE(デモ/ライブ振り分け + フォールバック)
 │       └── reconfigure/route.ts    自由文 → SpecDiff の SSE
 ├── lib/
-│   ├── appspec.ts                  AppSpec DSL(型 + structured outputs 用 JSON Schema)
+│   ├── appspec.ts                  AppSpec DSL(型 + JSON Schema + ワイヤ変換・id衝突リネーム)
 │   ├── specdiff.ts                 「日本語で書いて直す」の核(閉じた6操作 + applyDiff)
 │   ├── scenarios.ts                デモシナリオ5種(紙 + spec + シードデータ)
 │   ├── claude-live.ts              ライブ解析(向き検出 → sharp 回転補正 → streaming)
+│   ├── partial-json.ts             フェンス耐性の部分JSONパーサ(第2救済つき)
+│   ├── validate-spec.ts            アプリ側スキーマ検証+意味検査(空アプリ失格)
+│   ├── reconcile.ts                done.spec 照合・表示状態の再構築
+│   ├── rotation.ts                 回転判定のパースと二重合議(不一致は0に倒す)
+│   ├── llm-client.ts               経路解決ファクトリ(OrcaRouter / 直接 / デモ)
+│   ├── llm-pricing.ts              原価推定(公式掛け率・ライブ単価・絶対にthrowしない)
+│   ├── http.ts                     リクエストボディ上限(解析12MB)
+│   ├── highlight.ts                出典ハイライトのタッチ規則
 │   ├── demo.ts                     デモのイベント列を決定論的に生成
 │   ├── events.ts                   SSE プロトコル定義(デモ/ライブ共通)
-│   └── __tests__/                  specdiff 270 / scenarios 295 / appspec 99
+│   └── __tests__/                  12ファイル・823件(+ライブ実測プローブの意図的skip 1)
 └── components/
     ├── KamiwazaApp.tsx             画面状態機械 + SSE クライアント + Undo
     ├── SpecApp.tsx                 決定論的レンダラー(生成アプリの UI)
@@ -58,7 +67,7 @@ src/
 - **生成時**: Claude の出力は `src/lib/appspec.ts` の **AppSpec DSL** のみ(structured outputs で制約)。UI の品質・安全性は常にレンダラー側で担保する。
 - **再構成時**: Claude の出力は AppSpec ですらなく、`src/lib/specdiff.ts` の **6操作だけ**(`addApprovalStep` / `setNumberLimit` / `addField` / `addAggregation` / `renameField` / `addFilterColumn`)。target には現行 spec の実IDを enum で注入するため、存在しない項目は指定できない。適用は決定論的な純粋関数で、不正な操作は適用されず元の spec がそのまま返る。**モデルはアプリを壊せない。**
 
-設計の背景・却下した案・一見おかしなコードの理由は [../docs/DESIGN_NOTES.md](../docs/DESIGN_NOTES.md)。
+設計の背景・却下した案は [../ARCHITECTURE.md](../ARCHITECTURE.md)(主張→実装→テストの対応表つき)、残っている限界は [../KNOWN_ISSUES.md](../KNOWN_ISSUES.md)。
 
 ## スタック
 
