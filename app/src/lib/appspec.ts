@@ -113,6 +113,35 @@ function parseNumeric(raw: string): number | string {
   return Number.isFinite(n) ? n : raw;
 }
 
+/**
+ * fields と lineItems.columns の id 衝突を明細列側の決定論的リネームで解消する。
+ * 解析結果は拒否できない(ライブ本番で「エラーで空」が最悪)ため、衝突した列 id に
+ * 連番接尾辞(_2, _3, …)を付けて逃がす。接尾辞が既存の field/列 id と再衝突する場合は
+ * 空くまで連番を進める。fields 側の id は firstRecord・listColumns・aggregations.fieldId
+ * から参照されるため変更しない。列 id は lineRows が位置対応・specdiff の自然文解決が
+ * label 照合のため、リネームしても参照が壊れる経路はない。
+ * 衝突がなければ入力をそのまま返す(参照同一性を保つ)。
+ */
+function resolveColumnIdCollisions(
+  fields: FieldSpec[],
+  lineItems: LineItemsSpec | null,
+): LineItemsSpec | null {
+  if (!lineItems) return null;
+  const fieldIds = new Set(fields.map((f) => f.id));
+  if (!lineItems.columns.some((c) => fieldIds.has(c.id))) return lineItems;
+
+  const used = new Set([...fieldIds, ...lineItems.columns.map((c) => c.id)]);
+  const columns = lineItems.columns.map((col) => {
+    if (!fieldIds.has(col.id)) return col;
+    let n = 2;
+    while (used.has(`${col.id}_${n}`)) n++;
+    const id = `${col.id}_${n}`;
+    used.add(id);
+    return { ...col, id };
+  });
+  return { ...lineItems, columns };
+}
+
 export function toAppSpec(out: AnalyzeOutput): AppSpec {
   const record: AppRecord = {};
   for (const pair of out.firstRecord) {
@@ -128,11 +157,12 @@ export function toAppSpec(out: AnalyzeOutput): AppSpec {
     }
   }
 
+  const lineItems = resolveColumnIdCollisions(out.fields, out.lineItems);
   const lines: LineRecord[] = [];
-  if (out.lineItems) {
+  if (lineItems) {
     for (const row of out.lineRows ?? []) {
       const line: LineRecord = {};
-      out.lineItems.columns.forEach((col, i) => {
+      lineItems.columns.forEach((col, i) => {
         const raw = (row[i] ?? "").trim();
         if (raw === "") return;
         line[col.id] = col.type === "number" ? parseNumeric(raw) : raw;
@@ -143,7 +173,7 @@ export function toAppSpec(out: AnalyzeOutput): AppSpec {
 
   const { lineRows: _lineRows, ...rest } = out;
   void _lineRows;
-  return { ...rest, firstRecord: record, firstRecordLines: lines };
+  return { ...rest, lineItems, firstRecord: record, firstRecordLines: lines };
 }
 
 /**
