@@ -5,11 +5,12 @@
 // 誠実性の設計:
 //   - 課金の正はプロバイダのダッシュボード。ここで出すのはあくまで
 //     「トークン実測×公表単価の推定」であり、UIもそう自称する(突合で正当性を示す)
-//   - キャッシュトークンの課金単価はAPIに載らないため、保守的上限で計上する:
-//     cache_read も prompt 単価(実際は約0.1×)→ 実際より高い見積り
-//     = 安く見せる嘘を構造的に防ぐ
-//   - cache_creation は OrcaRouter 経由では常時0報告のため実質計上不能。
-//     式には含める(直接Anthropic経路の保険)が、表示側で注記する
+//   - キャッシュトークンは公式掛け率で計上する(2026-08-11にサポート回答+
+//     モデルページ公表値で確定: read 0.1× / write(5分TTL) 1.25×)。
+//     確定前は全種1×の満額計上(保守的上限)だった——「安く見せる嘘を構造的に防ぐ」
+//     という方針は同じで、根拠が推定から公表値に変わった
+//   - /v1/models の pricing にはキャッシュ単価フィールドがまだ無いため、
+//     掛け率は定数(出典コメント付き)。フィールドが生えたらライブ取得に切替える
 //   - 取得失敗・ID不一致・Anthropic直接経路(/v1/modelsにpricingなし)は
 //     定数 FALLBACK_RATES($5/$25)へフォールバックし、絶対に throw しない
 //     (原価表示の失敗で解析ストリームを殺さない)
@@ -133,20 +134,34 @@ export async function getModelRates(
 }
 
 /**
- * 保守的上限の原価推定(USD・純関数)。
+ * キャッシュ課金の公式掛け率(入力単価に対する倍率)。
+ * OrcaRouterサポート回答(2026-08-11)+モデルページ公表値で確定:
+ * read 0.1×($0.50/M) / write(5分TTL) 1.25×($6.25/M)。1時間TTLは2×だが、
+ * 本アプリの cache_control は解析コールの SYSTEM_PROMPT に付けた ephemeral(=5分TTL)
+ * 1箇所のみ(claude-live.ts。画像ブロックへの追加は実測評価の上で不採用)なので、
+ * writeは5分TTL率で計上する。
+ */
+export const CACHE_READ_MULTIPLIER = 0.1;
+export const CACHE_WRITE_MULTIPLIER = 1.25;
+
+/**
+ * 公式レート準拠の原価推定(USD・純関数)。
  *
- *   costUsd = (input + cacheRead + cacheCreation) × prompt/1e6 + output × completion/1e6
+ *   costUsd = (input + 0.1×cacheRead + 1.25×cacheCreation) × prompt/1e6
+ *           + output × completion/1e6
  *
  * Anthropicのusage語義では input_tokens はキャッシュ分を含まない
- * (合計プロンプト = input + cacheCreation + cacheRead)ため、
- * cacheRead を prompt 単価(実際は約0.1×)で足す=実際より高い見積り。
- * cacheCreation の実単価は1.25×だが1×で計上(0.25×分の過小は表示注記で担保。
- * OrcaRouter経由では常時0報告のため実質影響なし)。
+ * (合計プロンプト = input + cacheCreation + cacheRead)。
+ * 掛け率が公式確定(2026-08-11)するまでは全種を1×で満額計上する保守的上限だった。
+ * 確定後は公表レートに揃える(read側の10倍過大計上とwrite側の0.25×過小を同時に解消)。
+ * 課金の正は引き続きOrcaRouterダッシュボード(チップは推定であり請求額ではない)。
  * 返値は1e-6 USDで丸める(FPノイズ排除)。
  */
 export function estimateCostUsd(usage: LlmUsage, rates: ModelRates): number {
   const promptTokens =
-    usage.inputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens;
+    usage.inputTokens +
+    CACHE_READ_MULTIPLIER * usage.cacheReadInputTokens +
+    CACHE_WRITE_MULTIPLIER * usage.cacheCreationInputTokens;
   const cost =
     (promptTokens * rates.promptUsdPerMTok) / 1e6 +
     (usage.outputTokens * rates.completionUsdPerMTok) / 1e6;
