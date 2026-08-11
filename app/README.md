@@ -21,9 +21,9 @@ ANTHROPIC_API_KEY=sk-ant-...
 ## テスト・検査
 
 ```bash
-npm test          # vitest run — 664本
+npm test          # vitest run — 823件パス+意図的スキップ1件(RUN_LIVE_PROBE=1 時のみ実行のライブ実測プローブ)
 npm run test:watch
-npm run lint      # errors 0(warning 1 は既知: specdiff.ts の未使用 import)
+npm run lint      # errors 0 / warnings 0
 npm run build
 ```
 

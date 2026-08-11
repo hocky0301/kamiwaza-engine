@@ -6,7 +6,7 @@
 
 - **APIキーなしでデモが最後まで動く**(5シナリオの決定論リプレイ)
 - **実スキャン50枚のライブ検証済み** — 全項目正解 96%(48/50)、値レベル 99.87%(1,516/1,518)、幻覚 0件(通算 0/2,225)
-- **ユニットテスト 664本**(vitest)
+- **ユニットテスト 823件パス**(vitest。ほかにライブAPI実測用の意図的スキップ1件)
 
 ---
 
@@ -55,7 +55,7 @@
 cd app
 npm install
 npm run dev     # http://localhost:3000
-npm test        # ユニットテスト 664本(vitest)
+npm test        # ユニットテスト 823件パス+意図的スキップ1件(vitest)
 ```
 
 その他の scripts: `npm run build` / `npm start` / `npm run lint` / `npm run test:watch`。
@@ -163,22 +163,23 @@ ANTHROPIC_API_KEY=sk-ant-... npm run dev
 | `app/src/components/field-meta.tsx` | 27 | フィールド種別のアイコン・表示メタ |
 | `app/src/lib/__tests__/specdiff.test.ts` | 2,080 | SpecDiff テスト 270本 |
 | `app/src/lib/__tests__/scenarios.test.ts` | 1,192 | シナリオ整合性テスト 295本 |
-| `app/src/lib/__tests__/appspec.test.ts` | 1,087 | DSL テスト 99本 |
+| `app/src/lib/__tests__/appspec.test.ts` | 1,087 | DSL テスト 108本 |
+| `app/src/lib/__tests__/`(ほか9ファイル) | – | partial-json 27 / llm-client 21 / validate-spec 8 / llm-pricing 25 / highlight 18 / attack2-repro 23 / reconcile 15 / rotation 13 / attack2-live-probe(意図的skip 1) |
 | `app/vitest.config.mts` | – | テスト設定 |
 | `app/AGENTS.md`(= `CLAUDE.md`) | – | エージェント規約: この Next.js は訓練データと異なる。`node_modules/next/dist/docs/` を読んでから書く |
 
 ---
 
-## 品質の実測値(2026-08-01 時点)
+## 品質の実測値(2026-08-11 時点)
 
 | 検査 | 結果 |
 |---|---|
-| `npm test` | **Test Files 3 passed / Tests 664 passed**(specdiff 270 / scenarios 295 / appspec 99) |
-| `npm run lint` | errors 0(warning 1 = 既知: `specdiff.ts` の未使用 import `ColumnSpec`) |
+| `npm test` | **Test Files 11 passed / 1 skipped、Tests 823 passed / 1 skipped**(skip 1件はライブAPI実測プローブ=`RUN_LIVE_PROBE=1` 時のみ実行の設計) |
+| `npm run lint` | errors 0 / warnings 0 |
 | `tsc --noEmit` | exit 0 |
-| `npm run build` | 成功(4ルート) |
+| `npm run build` | 成功(5ページ静的生成。2026-08-09 実測) |
 
-「テストがあるからバグはない」への拡大解釈は不可。テストで**発見して直した**不具合5件の記録は `docs/06_claims_ledger.md` §1-F にある。
+「テストがあるからバグはない」への拡大解釈は不可。テストで**発見して直した**不具合の記録は `docs/06_claims_ledger.md` §1-F にある。
 
 ---
 
@@ -197,6 +198,6 @@ python3 pitch/check_deck.py # 機械ゲート。exit 0 で通過
 
 **このリポジトリに数字を書くときは、`docs/06_claims_ledger.md` §3 凍結値表の値だけを使う。** 凍結値を変えるときは台帳を先に更新し、その後でスライド・スクリプト・本 README を更新する。
 
-主な凍結値: 中小企業 **336.5万者**(中小企業庁、2021年6月時点)/ 受発注が電話・FAX **24.6%**(東京商工会議所、限定句4点セットとセットで言う)/ TAM **約396億円** / 全項目正解 **96%**(48/50)/ 値レベル **99.87%**(1,516/1,518)/ 幻覚 **0件**(通算 0/2,225)/ 明細 **196/196 行** / 処理時間 **中央値27.3秒** / ユニットテスト **664本** / デモ **5シナリオ**。
+主な凍結値: 中小企業 **336.5万者**(中小企業庁、2021年6月時点)/ 受発注が電話・FAX **24.6%**(東京商工会議所、限定句4点セットとセットで言う)/ TAM **約396億円** / 全項目正解 **96%**(48/50)/ 値レベル **99.87%**(1,516/1,518)/ 幻覚 **0件**(通算 0/2,225)/ 明細 **196/196 行** / 処理時間 **中央値27.3秒** / ユニットテスト **823件パス(+意図的スキップ1件)** / デモ **5シナリオ**。
 
-**恒久使用禁止の旧値**: 「358万社」「421億円 / 420億円」「12兆円」「130〜155時間」「2,700時間」「1.4人年」「17/17」「599/599」。また「完全」「100%」「必ず30秒」「有意に改善」「幻覚ゼロを保証」は使わない(`docs/06_claims_ledger.md` §4 危険ワード表)。
+**恒久使用禁止の旧値**: 「358万社」「421億円 / 420億円」「12兆円」「130〜155時間」「2,700時間」「1.4人年」「17/17」「599/599」(および 664/718/743/761/799 等の旧テスト数)。また「完全」「100%」「必ず30秒」「有意に改善」「幻覚ゼロを保証」は使わない(`docs/06_claims_ledger.md` §4 危険ワード表)。
