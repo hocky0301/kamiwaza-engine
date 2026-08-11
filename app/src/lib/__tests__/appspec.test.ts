@@ -10,7 +10,7 @@ import {
   type FieldType,
   type LineItemsSpec,
 } from "../appspec";
-import { buildReconfigureTools, toolCallToDiff } from "../specdiff";
+import { applyDiff, buildReconfigureTools, toolCallToDiff } from "../specdiff";
 import {
   ANALYZE_OUTPUT_SCHEMA,
   SUPPORTED_KEYWORDS,
@@ -925,5 +925,162 @@ describe("toAppSpec: 壊れた入力は検証されず throw する(現状仕様
     });
     (out as { lineRows: unknown }).lineRows = [[1]];
     expect(() => toAppSpec(out)).toThrow(TypeError);
+  });
+});
+
+describe("toAppSpec: fields と明細列の id 衝突は列側の決定論的リネームで解消する(F03 解析経路)", () => {
+  // モデルが最初の解析で fields と lineItems.columns に同じ id を吐くと、
+  // 以後 renameField / setNumberLimit が fields 側を先に拾い明細列に届かなくなる。
+  // 解析結果は拒否できない(ライブ本番で「エラーで空」が最悪)ため、
+  // 衝突した列 id に連番接尾辞を付けて逃がす。fields 側の id は
+  // firstRecord / listColumns / aggregations.fieldId から参照されるため動かさない。
+
+  it("衝突がなければ lineItems は入力と同一参照のまま(リネーム経路を通らない)", () => {
+    const input = analyzeOutput({
+      fields: [field("total", "number")],
+      lineItems: { label: "明細", columns: [{ id: "name", label: "品名", type: "text" }] },
+    });
+    const out = toAppSpec(input);
+    expect(out.lineItems).toBe(input.lineItems);
+  });
+
+  it("衝突した列 id には _2 が付き、id 以外(label/type/unit)と lineItems.label/sourceBox は保たれる", () => {
+    const input = analyzeOutput({
+      fields: [field("unit_price", "number")],
+      lineItems: {
+        label: "注文明細",
+        columns: [{ id: "unit_price", label: "単価", type: "number", unit: "円" }],
+        sourceBox: { x: 1, y: 2, w: 3, h: 4 },
+      },
+    });
+    const out = toAppSpec(input);
+    expect(out.lineItems?.columns).toEqual([
+      { id: "unit_price_2", label: "単価", type: "number", unit: "円" },
+    ]);
+    expect(out.lineItems?.label).toBe("注文明細");
+    expect(out.lineItems?.sourceBox).toEqual({ x: 1, y: 2, w: 3, h: 4 });
+  });
+
+  it("fields 側の id と firstRecord のキーは変わらない(sourceBox・集計・一覧の参照を壊さない)", () => {
+    const input = analyzeOutput({
+      fields: [field("unit_price", "number")],
+      lineItems: {
+        label: "明細",
+        columns: [{ id: "unit_price", label: "単価", type: "number" }],
+      },
+      firstRecord: [{ fieldId: "unit_price", value: "500" }],
+    });
+    const out = toAppSpec(input);
+    expect(out.fields).toBe(input.fields);
+    expect(out.firstRecord).toEqual({ unit_price: 500 });
+  });
+
+  it("firstRecordLines のキーはリネーム後の列 id になる(lineRows は位置対応なので値は落ちない)", () => {
+    const out = toAppSpec(
+      analyzeOutput({
+        fields: [field("qty", "number")],
+        lineItems: {
+          label: "明細",
+          columns: [
+            { id: "name", label: "品名", type: "text" },
+            { id: "qty", label: "数量", type: "number" },
+          ],
+        },
+        lineRows: [["ボルト", "3"]],
+      }),
+    );
+    expect(out.firstRecordLines).toEqual([{ name: "ボルト", qty_2: 3 }]);
+  });
+
+  it("複数の列が衝突すればそれぞれ独立にリネームされる", () => {
+    const out = toAppSpec(
+      analyzeOutput({
+        fields: [field("qty", "number"), field("price", "number")],
+        lineItems: {
+          label: "明細",
+          columns: [
+            { id: "name", label: "品名", type: "text" },
+            { id: "qty", label: "数量", type: "number" },
+            { id: "price", label: "単価", type: "number" },
+          ],
+        },
+      }),
+    );
+    expect(out.lineItems?.columns.map((c) => c.id)).toEqual(["name", "qty_2", "price_2"]);
+  });
+
+  it("接尾辞 _2 が fields 側の既存 id と再衝突する場合は空くまで連番を進める", () => {
+    const out = toAppSpec(
+      analyzeOutput({
+        fields: [field("qty", "number"), field("qty_2", "number")],
+        lineItems: {
+          label: "明細",
+          columns: [{ id: "qty", label: "数量", type: "number" }],
+        },
+      }),
+    );
+    expect(out.lineItems?.columns.map((c) => c.id)).toEqual(["qty_3"]);
+  });
+
+  it("接尾辞 _2 が別の明細列と再衝突する場合も空くまで連番を進める(列同士の新規衝突を作らない)", () => {
+    const out = toAppSpec(
+      analyzeOutput({
+        fields: [field("qty", "number")],
+        lineItems: {
+          label: "明細",
+          columns: [
+            { id: "qty", label: "数量", type: "number" },
+            { id: "qty_2", label: "予備", type: "number" },
+          ],
+        },
+      }),
+    );
+    expect(out.lineItems?.columns.map((c) => c.id)).toEqual(["qty_3", "qty_2"]);
+  });
+
+  it("決定論: 同じ入力を2回変換すると完全に同じ結果になる", () => {
+    const make = () =>
+      analyzeOutput({
+        fields: [field("qty", "number"), field("qty_2", "number")],
+        lineItems: {
+          label: "明細",
+          columns: [
+            { id: "qty", label: "数量", type: "number" },
+            { id: "qty", label: "重複数量", type: "number" },
+          ],
+        },
+        lineRows: [["3", "4"]],
+      });
+    const a = toAppSpec(make());
+    const b = toAppSpec(make());
+    expect(a).toEqual(b);
+    // 同一 id の列が両方衝突しても、先勝ちの連番で互いに区別される
+    expect(a.lineItems?.columns.map((c) => c.id)).toEqual(["qty_3", "qty_4"]);
+  });
+
+  it("横断: リネーム後は setNumberLimit / renameField が fields と明細列の両方に届く(F03 の実害の解消)", () => {
+    const spec = toAppSpec(
+      analyzeOutput({
+        fields: [field("unit_price", "number")],
+        lineItems: {
+          label: "明細",
+          columns: [{ id: "unit_price", label: "単価", type: "number" }],
+        },
+      }),
+    );
+    // fields 側: 元の id で届く
+    const r1 = applyDiff(spec, { op: "setNumberLimit", fieldId: "unit_price", max: 100 });
+    expect(r1.ok).toBe(true);
+    expect(r1.spec.fields[0].max).toBe(100);
+    expect(r1.spec.lineItems?.columns[0].max).toBeUndefined();
+    // 明細列側: リネーム後の id で届く(修正前は到達不能だった)
+    const r2 = applyDiff(spec, { op: "setNumberLimit", fieldId: "unit_price_2", max: 200 });
+    expect(r2.ok).toBe(true);
+    expect(r2.spec.lineItems?.columns[0].max).toBe(200);
+    expect(r2.spec.fields[0].max).toBeUndefined();
+    const r3 = applyDiff(spec, { op: "renameField", fieldId: "unit_price_2", label: "仕入単価" });
+    expect(r3.ok).toBe(true);
+    expect(r3.spec.lineItems?.columns[0].label).toBe("仕入単価");
+    expect(r3.spec.fields[0].label).toBe("unit_price");
   });
 });
