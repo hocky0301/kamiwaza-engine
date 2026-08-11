@@ -64,26 +64,29 @@ afterEach(() => {
 });
 
 describe("estimateCostUsd: 保守的上限式(純関数)", () => {
-  it("cacheRead が prompt 単価で加算される(input−cacheRead との相殺で消えない)", () => {
-    // input=4120, cacheRead=980 → プロンプト計 5100 tok。
-    // 誤式 (input−cacheRead)×p + cacheRead×p = input×p だと 4120×p になり
-    // cacheRead が丸ごと落ちる。正しくは (input+cacheRead)×p。
+  it("cacheRead は公式掛け率0.1×で加算される(落ちも満額計上もしない)", () => {
+    // input=4120, cacheRead=980 → 実効プロンプト 4120 + 0.1×980 = 4218 tok。
+    // 公式レート(OrcaRouterモデルページ公表値・2026-08-11): read $0.50/M = 入力単価の0.1×。
     const cost = estimateCostUsd(
       usage({ inputTokens: 4120, cacheReadInputTokens: 980, outputTokens: 3540 }),
       FALLBACK_RATES,
     );
-    // 5100×$5/MTok + 3540×$25/MTok = $0.0255 + $0.0885 = $0.114(1e-6丸め済み)
-    expect(cost).toBe(0.114);
-    // cacheRead を落とした誤式の値(4120×$5/MTok + 3540×$25/MTok = $0.1091)とは一致しない
+    // 4218×$5/MTok + 3540×$25/MTok = $0.021090 + $0.0885 = $0.10959
+    expect(cost).toBe(0.10959);
+    // cacheRead を丸ごと落とした誤式(4120×p)とも旧満額計上(5100×p)とも一致しない
     expect(cost).not.toBe(0.1091);
+    expect(cost).not.toBe(0.114);
   });
 
-  it("cacheCreation も prompt 単価で計上される(直接Anthropic経路の保険)", () => {
+  it("cacheCreation は公式掛け率1.25×(5分TTL write)で計上される", () => {
+    // 100 + 1.25×900 = 1225 tok 相当。write $6.25/M = 入力単価の1.25×(公表値)。
     const cost = estimateCostUsd(
       usage({ inputTokens: 100, cacheCreationInputTokens: 900 }),
       FALLBACK_RATES,
     );
-    expect(cost).toBe((1000 * 5) / 1e6);
+    expect(cost).toBe((1225 * 5) / 1e6);
+    // 旧満額計上(1000×p)なら過小、との境界を固定
+    expect(cost).not.toBe((1000 * 5) / 1e6);
   });
 
   it("全ゼロの usage は 0", () => {

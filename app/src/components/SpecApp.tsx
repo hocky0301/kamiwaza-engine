@@ -52,7 +52,7 @@ const isInteractiveTarget = (target: EventTarget | null) => {
 
 /**
  * 推定原価の累計(解析+ライブ再構成)。
- * トークン実測×公表単価の保守的上限であり、課金の正はプロバイダのダッシュボード。
+ * トークン実測×公表単価(キャッシュは公式掛け率)の推定であり、課金の正はプロバイダのダッシュボード。
  */
 export interface CostState {
   /** 累計の推定原価(USD) */
@@ -767,7 +767,7 @@ function fmtYen(usd: number): string {
 
 /**
  * 推定原価の詳細行(ヘッダ下トグル+hoverのtitle兼用)。
- * 「トークン実測×公表単価の保守的上限」であることを隠さず示す。
+ * 「トークン実測×公表単価(キャッシュは公式掛け率)の推定」であることを隠さず示す。
  */
 function costDetailLines(cost: CostState): string[] {
   const u = cost.usage;
@@ -786,7 +786,7 @@ function costDetailLines(cost: CostState): string[] {
   const billingRef = cost.route === "anthropic" ? "Anthropicコンソール" : "OrcaRouterダッシュボード";
   return [
     `${breakdown} tok × $5/$25 per 1Mtok(${rateSource})`,
-    "キャッシュ割引前の上限推定(cache_read/cache_creation とも入力単価で満額計上。割引後の正値はダッシュボード)",
+    "公式レート準拠の推定(cache_read 0.1×・cache_write 1.25×はモデルページ公表値。課金の正はダッシュボード)",
     `課金の正: ${billingRef}(この推定と突合可)・$1=¥${USD_JPY_REFERENCE_RATE} 参考換算`,
     ...(cost.reconfCalls > 0 ? [`再構成${cost.reconfCalls}回を含む累計`] : []),
   ];
