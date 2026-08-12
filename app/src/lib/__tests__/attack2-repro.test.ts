@@ -172,7 +172,7 @@ describe("F2: 同一デルタ二重適用による文字重複(「管理理」�
   });
 
   it("文字列リテラル内のデルタが二重適用されると「出荷指示管理理」になり、JSONとして有効", () => {
-    // claude-live.ts:229 の `buffer += delta` は重複検出を持たない。
+    // claude-live.ts:264 の `buffer += delta` は重複検出を持たない。
     // 同一チャンク「理」が2回届く(プロキシ再送・SSE再emit等)と:
     const deltas = [
       '{"appName":"出荷指示管',
@@ -221,7 +221,7 @@ describe("F2: 同一デルタ二重適用による文字重複(「管理理」�
     const broken = '{"appName":"出荷指示管理","fields":[],],"listColumns":[]}';
     expect(() => JSON.parse(broken)).toThrow();
     expect(extractBalancedJson(broken)).toBeNull();
-    // claude-live.ts:281-286 の最終パース(+extractBalancedJson救済も不可)で throw
+    // claude-live.ts:309-321 の最終パース(+extractBalancedJson救済も不可)で throw
     // → デモフォールバック発火。検出できるのはこの形だけで、
     //   文字列内重複・メンバー単位重複・末尾重複はすべて素通りする
   });

@@ -55,6 +55,8 @@ function addUsage(total: LlmUsage, u: Anthropic.Usage | null | undefined): void 
   total.cacheReadInputTokens += u.cache_read_input_tokens ?? 0;
 }
 
+// 注意: プログレッシブ表示に必要な4プロパティしか検査しない(required は未検査のまま
+// FieldSpec を主張する)。完全性は最終JSONへの validateAnalyzeOutput が別途保証する
 function isCompleteField(f: unknown): f is FieldSpec {
   if (!f || typeof f !== "object") return false;
   const o = f as Record<string, unknown>;
@@ -66,11 +68,6 @@ function isCompleteField(f: unknown): f is FieldSpec {
   );
 }
 
-/**
- * 文書の向きを検出する。FAXスキャンは本文が90°/180°回転していることがある
- * (FAXヘッダだけ正向きのケースもあるため、本文基準で判定させる)。
- * 返り値は「時計回りに何度回すと正しい向きになるか」。
- */
 /** 回転判定ツール。tool_choice で強制するため、応答は tool_use ブロックの input に閉じる */
 const ROTATION_TOOL: Anthropic.Tool = {
   name: "report_rotation",
@@ -139,6 +136,11 @@ async function askRotationOnce(
   return { vote: parseRotationResponse(text), usage };
 }
 
+/**
+ * 文書の向きを検出する。FAXスキャンは本文が90°/180°回転していることがある
+ * (FAXヘッダだけ正向きのケースもあるため、本文基準で判定させる)。
+ * 返り値は「時計回りに何度回すと正しい向きになるか」。
+ */
 async function detectRotation(
   client: Anthropic,
   model: string,

@@ -605,7 +605,6 @@ export function KamiwazaApp({
     [reconfBusy, runOps],
   );
 
-  /** タップ発火用: 同じ出典の再タップで解除、別の出典で切り替え(規則はlib/highlight.ts) */
   // バッジの説明は実際の経路に一致させる。OrcaRouter経由なのに
   // 「ANTHROPIC_API_KEY が設定されています」と出ると、審査員に直結運用と誤解される
   const liveStatusText = !liveAvailable
@@ -614,6 +613,7 @@ export function KamiwazaApp({
       ? "OrcaRouter 経由でライブ解析が使えます(ORCAROUTER_API_KEY)"
       : "Anthropic に直結してライブ解析が使えます(ANTHROPIC_API_KEY)";
 
+  /** タップ発火用: 同じ出典の再タップで解除、別の出典で切り替え(規則はlib/highlight.ts) */
   const handleHighlightToggle = useCallback((box: SourceBox) => {
     setHighlight((cur) => toggleHighlight(cur, box));
   }, []);
