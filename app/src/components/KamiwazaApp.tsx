@@ -608,7 +608,7 @@ export function KamiwazaApp({
   // バッジの説明は実際の経路に一致させる。OrcaRouter経由なのに
   // 「ANTHROPIC_API_KEY が設定されています」と出ると、審査員に直結運用と誤解される
   const liveStatusText = !liveAvailable
-    ? "APIキーなしでも完全動作するデモモードで動いています"
+    ? "APIキーなしでも最後まで動くデモモードで動いています"
     : liveRoute === "orcarouter"
       ? "OrcaRouter 経由でライブ解析が使えます(ORCAROUTER_API_KEY)"
       : "Anthropic に直結してライブ解析が使えます(ANTHROPIC_API_KEY)";
