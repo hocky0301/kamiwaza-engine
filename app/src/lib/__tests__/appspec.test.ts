@@ -551,7 +551,7 @@ describe("ANALYZE_OUTPUT_JSON_SCHEMA: null 許容のイディオムが2種類混
 
 describe("ANALYZE_OUTPUT_JSON_SCHEMA: プロパティ宣言順は claude-live のストリーミング前提", () => {
   it("properties の宣言順が凍結されている(fields は description の直後)", () => {
-    // claude-live.ts:241-249 のプログレッシブ描画は「スキーマ順で fields は description の直後」
+    // claude-live.ts:263-296 のプログレッシブ描画は「スキーマ順で fields は description の直後」
     // に依存し、"fields":[ が現れた時点で description の文字列が閉じたと判断している。
     // 並べ替えると型チェックもテストも通るのに描画だけ壊れるサイレント回帰になる。
     expect(Object.keys(ANALYZE_OUTPUT_JSON_SCHEMA.properties)).toEqual([

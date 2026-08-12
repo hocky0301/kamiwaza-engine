@@ -1678,7 +1678,7 @@ describe("不正な操作の封じ込め", () => {
   ])("diff が %s でも例外を投げず、元の spec が同一参照で返る", (_name, bad) => {
     // ここが投げると sendInstruction の try が握り潰し、指示が黙ってキーワード解釈に
     // 落ちる(舞台上では「入力したのに別物が起きた」に見える)。
-    // KamiwazaApp.tsx:316 のコメントが主張しているのはこの範囲まで。
+    // KamiwazaApp.tsx:406-408 のコメントが主張しているのはこの範囲まで。
     const spec = makeSpec();
     const r: DiffResult = applyDiff(spec, bad as unknown as SpecDiff);
 

@@ -37,6 +37,10 @@ export type AnalyzeEvent =
   | { type: "lineitems"; spec: LineItemsSpec; rowCount: number }
   | { type: "approval"; flow: ApprovalStep[] | null }
   | { type: "aggregation"; agg: AggregationSpec }
+  /**
+   * lines は両経路が送出するが現行クライアントは読まない(明細表示は lineitems の
+   * rowCount と done.spec.firstRecordLines のみ)。削除はワイヤ形式の変更になるため据え置き
+   */
   | { type: "record"; record: AppRecord; lines?: LineRecord[] }
   | { type: "question"; fieldId: string; question: string; choices: string[] }
   /**
