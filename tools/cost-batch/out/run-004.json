@@ -1,0 +1,121 @@
+{
+  "generatedAt": "2026-08-12T12:26:41.977Z",
+  "baseUrl": "http://localhost:3000",
+  "imageDir": "tools/cost-batch/samples",
+  "note": "合計 costUsd を OrcaRouter コンソールの同時間帯の使用額と突合する。FAIL を含む実行は凍結値に使わない",
+  "totals": {
+    "files": 5,
+    "ok": 5,
+    "fail": 0,
+    "seconds": 459.5,
+    "usage": {
+      "inputTokens": 26291,
+      "outputTokens": 6605,
+      "cacheReadInputTokens": 16764,
+      "cacheCreationInputTokens": 8879
+    },
+    "costUsd": 0.360456
+  },
+  "files": [
+    {
+      "file": "01-seikyusho.jpg",
+      "ok": true,
+      "seconds": 103.057,
+      "lastPhase": "紙に書かれていた内容を 1件目のデータとして登録しました",
+      "validation": {
+        "ok": true,
+        "violations": 0
+      },
+      "mode": "live",
+      "usage": {
+        "inputTokens": 4921,
+        "outputTokens": 1583,
+        "cacheCreationInputTokens": 6537,
+        "cacheReadInputTokens": 0
+      },
+      "costUsd": 0.105036,
+      "llmRoute": "orcarouter",
+      "pricingSource": "live"
+    },
+    {
+      "file": "02-hachusho.jpg",
+      "ok": true,
+      "seconds": 85.242,
+      "lastPhase": "紙に書かれていた内容を 1件目のデータとして登録しました",
+      "validation": {
+        "ok": true,
+        "violations": 0
+      },
+      "mode": "live",
+      "usage": {
+        "inputTokens": 4921,
+        "outputTokens": 1812,
+        "cacheCreationInputTokens": 2342,
+        "cacheReadInputTokens": 4191
+      },
+      "costUsd": 0.086638,
+      "llmRoute": "orcarouter",
+      "pricingSource": "live"
+    },
+    {
+      "file": "03-mitsumorisho.jpg",
+      "ok": true,
+      "seconds": 79.195,
+      "lastPhase": "紙に書かれていた内容を 1件目のデータとして登録しました",
+      "validation": {
+        "ok": true,
+        "violations": 0
+      },
+      "mode": "live",
+      "usage": {
+        "inputTokens": 5483,
+        "outputTokens": 401,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 4191
+      },
+      "costUsd": 0.039536,
+      "llmRoute": "orcarouter",
+      "pricingSource": "live"
+    },
+    {
+      "file": "04-nohinsho.jpg",
+      "ok": true,
+      "seconds": 96.301,
+      "lastPhase": "紙に書かれていた内容を 1件目のデータとして登録しました",
+      "validation": {
+        "ok": true,
+        "violations": 0
+      },
+      "mode": "live",
+      "usage": {
+        "inputTokens": 5483,
+        "outputTokens": 1453,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 4191
+      },
+      "costUsd": 0.065836,
+      "llmRoute": "orcarouter",
+      "pricingSource": "live"
+    },
+    {
+      "file": "05-keihiseisan.jpg",
+      "ok": true,
+      "seconds": 95.753,
+      "lastPhase": "紙に書かれていた内容を 1件目のデータとして登録しました",
+      "validation": {
+        "ok": true,
+        "violations": 0
+      },
+      "mode": "live",
+      "usage": {
+        "inputTokens": 5483,
+        "outputTokens": 1356,
+        "cacheCreationInputTokens": 0,
+        "cacheReadInputTokens": 4191
+      },
+      "costUsd": 0.06341,
+      "llmRoute": "orcarouter",
+      "pricingSource": "live"
+    }
+  ]
+}
