@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-08-12T10:55:29.500Z",
+  "baseUrl": "http://localhost:3000",
+  "imageDir": "tools/cost-batch/samples",
+  "note": "合計 costUsd を OrcaRouter コンソールの同時間帯の使用額と突合する。FAIL を含む実行は凍結値に使わない",
+  "totals": {
+    "files": 5,
+    "ok": 0,
+    "fail": 5,
+    "seconds": 72.8,
+    "usage": {
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0
+    },
+    "costUsd": 0
+  },
+  "files": [
+    {
+      "file": "01-seikyusho.jpg",
+      "ok": false,
+      "seconds": 15.667,
+      "lastPhase": "紙に書かれていた内容を 1件目のデータとして登録しました",
+      "mode": "demo",
+      "scenarioId": "chumonsho",
+      "failReason": "デモフォールバック (llmRoute 無し = ライブ解析失敗)"
+    },
+    {
+      "file": "02-hachusho.jpg",
+      "ok": false,
+      "seconds": 14.276,
+      "lastPhase": "紙に書かれていた内容を 1件目のデータとして登録しました",
+      "mode": "demo",
+      "scenarioId": "chumonsho",
+      "failReason": "デモフォールバック (llmRoute 無し = ライブ解析失敗)"
+    },
+    {
+      "file": "03-mitsumorisho.jpg",
+      "ok": false,
+      "seconds": 14.237,
+      "lastPhase": "紙に書かれていた内容を 1件目のデータとして登録しました",
+      "mode": "demo",
+      "scenarioId": "chumonsho",
+      "failReason": "デモフォールバック (llmRoute 無し = ライブ解析失敗)"
+    },
+    {
+      "file": "04-nohinsho.jpg",
+      "ok": false,
+      "seconds": 14.326,
+      "lastPhase": "紙に書かれていた内容を 1件目のデータとして登録しました",
+      "mode": "demo",
+      "scenarioId": "chumonsho",
+      "failReason": "デモフォールバック (llmRoute 無し = ライブ解析失敗)"
+    },
+    {
+      "file": "05-keihiseisan.jpg",
+      "ok": false,
+      "seconds": 14.343,
+      "lastPhase": "紙に書かれていた内容を 1件目のデータとして登録しました",
+      "mode": "demo",
+      "scenarioId": "chumonsho",
+      "failReason": "デモフォールバック (llmRoute 無し = ライブ解析失敗)"
+    }
+  ]
+}
