@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description:
     "手書き帳票・FAX注文書の写真1枚を、その場で業務アプリに変換するPaper-to-Appエンジン。",
   // ホーム画面起動対応(ブースのiPad動線)。Service Worker/manifest.jsonは
-  // 追加しない — 「PWA」とは主張しない線(docs/06 C18)を維持する。
+  // 追加しない — 「PWA」とは主張しない線を維持する。
   // apple-touch-icon は src/app/apple-icon.png のファイル規約で自動注入される
   appleWebApp: {
     capable: true,

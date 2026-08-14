@@ -1,7 +1,7 @@
 // LLMクライアントファクトリ — OrcaRouter / 直接Anthropic / デモのみ、の経路解決を一元化する。
 //
 // 経路解決の優先順位:
-//   1. LLM_FORCE_DIRECT=1 … OrcaRouterを無視して直接Anthropicに強制(障害時の保険。docs/08ブース設計が参照)
+//   1. LLM_FORCE_DIRECT=1 … OrcaRouterを無視して直接Anthropicに強制(障害時の保険。運用方針ブース設計が参照)
 //   2. ORCAROUTER_API_KEY … OrcaRouter経由(Anthropicプロトコル互換 /v1/messages・Bearer認証)
 //   3. ANTHROPIC_API_KEY  … 従来どおり直接Anthropic
 //   4. どれも無ければ null … 呼び出し元はデモモードで動く
