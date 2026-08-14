@@ -23,3 +23,5 @@ docs_private/
 # ピッチ機械チェックの抽出結果(pitch/check_deck.py)
 pitch/.check_out/
 app/public/sfx/
+__pycache__/
+*.pyc
