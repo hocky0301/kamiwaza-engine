@@ -1,0 +1,28 @@
+# Python 側ツール設定の正本。CI(.github/workflows/ci.yml)はここを参照する。
+# このリポジトリの Python は「対外主張を機械で検証する側」だけで、アプリ本体は app/(TypeScript)。
+# 設定をコマンドラインではなくファイルに置くのは、CI とローカルで同じ判定にするため。
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["app", "docs_private", "会社書類_(実企業名・非公開)"]
+
+[tool.ruff.lint]
+# E/F=pycodestyle+pyflakes, I=import順, UP=構文の現代化, B=bugbear, SIM=簡約
+# RUF は全角文字を「曖昧なunicode」として拾うため、日本語コメントの多い本リポジトリでは外す
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+# tools/ 配下のモジュールは自作扱い(サードパーティと混ざらないように)
+known-first-party = ["verify_stats"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "tools"
+files = ["tools/verify_stats.py", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tools"]
+addopts = "-q"

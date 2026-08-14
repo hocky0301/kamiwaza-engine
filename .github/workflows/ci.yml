@@ -22,15 +22,26 @@ jobs:
       - run: npm run lint
       - run: npm test
 
-  stats:
-    # 記事・READMEの統計値(95%CI・値精度・キャッシュ内訳)を実測ログから再計算して検証する。
-    # 数字が主張とずれたらCIが赤になる=「凍結値の照合」を機械に固定する
+  claims:
+    # 対外主張を機械で検証する層。設定は pyproject.toml に集約(CIとローカルで同じ判定になる)。
+    #   ruff   … lint と format の一致
+    #   mypy   … --strict(設定は pyproject.toml)
+    #   pytest … 検証スクリプト自身のテスト(Clopper-Pearson 実装の恒等式・境界)
+    #   verify_stats.py … 記事・READMEの統計値を一次ログから再計算。ずれたら赤
+    #   check_deck.py   … ピッチの凍結値の一致と禁句の不在。違反したら赤
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install mypy
-      - run: mypy --strict tools/verify_stats.py
+      # バージョンは固定する(ツールが上がった日にCIが勝手に壊れないように)
+      - run: pip install ruff==0.16.3 mypy==2.3.0 pytest==9.1.1
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+      - run: pytest
       - run: python3 tools/verify_stats.py
+      # pitch/ は公開リポジトリに含めない裁定のため、存在するときだけ検査する
+      # (作業リポジトリでは必ず走り、公開スナップショットでは自動でスキップ)
+      - run: if [ -f pitch/check_deck.py ]; then python3 pitch/check_deck.py; else echo "pitch/ なし(公開リポジトリ) → スキップ"; fi
