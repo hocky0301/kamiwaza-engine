@@ -84,6 +84,8 @@ interface SpecAppProps {
   mode: "demo" | "live";
   /** ライブ経路の推定原価チップ。デモ・usage欠落時はnull(実額を捏造しない) */
   cost: CostState | null;
+  /** ライブ解析が失敗してデモへ落ちたとき、失敗までに実際に消費した推定原価(USD) */
+  abortedLiveCost?: number | null;
   onHighlight: (box: SourceBox | null) => void;
   /** タップ用: 同じ出典の再タップで解除、別の出典で切り替え(lib/highlight.tsの規則) */
   onHighlightToggle: (box: SourceBox) => void;
@@ -800,6 +802,7 @@ export function SpecApp({
   alert,
   mode,
   cost,
+  abortedLiveCost,
   onHighlight,
   onHighlightToggle,
   question,
@@ -873,8 +876,14 @@ export function SpecApp({
               className="relative text-[10px] rounded-full px-2.5 py-1 shrink-0 bg-panel border border-line hover:border-dim transition-colors cursor-pointer text-dim whitespace-nowrap pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
               title="サンプルカードは決定論リプレイでAPIを呼びません。実額はライブ解析時のみ表示"
             >
-              <span className="sm:hidden">原価 $0</span>
-              <span className="hidden sm:inline">デモ再生: LLM呼び出しなし(原価 $0)</span>
+              <span className="sm:hidden">
+                {abortedLiveCost ? `原価 $${abortedLiveCost.toFixed(4)}` : "原価 $0"}
+              </span>
+              <span className="hidden sm:inline">
+                {abortedLiveCost
+                  ? `ライブ解析が中断: 消費済み 約$${abortedLiveCost.toFixed(4)}`
+                  : "デモ再生: LLM呼び出しなし(原価 $0)"}
+              </span>
               <span className="ml-1">{demoOpen ? "▾" : "▸"}</span>
             </button>
           )}
@@ -901,7 +910,9 @@ export function SpecApp({
         {/* デモ$0の説明(チップをタップでトグル)— titleツールチップのタッチ代替 */}
         {mode === "demo" && demoOpen && (
           <div className="px-5 py-2 border-b border-line text-[11px] leading-5 text-dim">
-            サンプルカードは決定論リプレイでAPIを呼びません。実額はライブ解析時のみ表示されます
+            {abortedLiveCost
+              ? `ライブ解析が途中で失敗したため、デモデータで続行しています。以降の表示はデモデータですが、失敗するまでに送信したトークンの料金は発生しています(推定 $${abortedLiveCost.toFixed(6)}。課金の正はダッシュボード)`
+              : "サンプルカードは決定論リプレイでAPIを呼びません。実額はライブ解析時のみ表示されます"}
           </div>
         )}
 

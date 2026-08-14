@@ -169,9 +169,21 @@ async function detectRotation(
   return { rotation: resolveRotationVotes(first.vote, second.vote), usage: merged };
 }
 
+/**
+ * ライブ解析が途中でthrowしても、そこまでに消費したトークンを呼び出し側へ残すための受け皿。
+ * デモへフォールバックした画面で「LLM呼び出しなし(原価 $0)」と表示すると、
+ * 実際には課金が発生しているのに無料だと誤認させるため(誠実表示の規律)。
+ */
+export interface LiveUsageSink {
+  usage: LlmUsage;
+  route: string | null;
+  costUsd: number | null;
+}
+
 export async function streamLiveAnalysis(
   image: { data: string; mediaType: string },
   emit: (e: AnalyzeEvent) => void,
+  sink?: LiveUsageSink,
 ): Promise<void> {
   let mediaType = SUPPORTED_MEDIA.includes(image.mediaType as SupportedMedia)
     ? (image.mediaType as SupportedMedia)
@@ -185,12 +197,15 @@ export async function streamLiveAnalysis(
   // 原価チップ用の単価を先に温める(解析中に取得が終わり、done発行時の待ちゼロ)
   warmPricingCache(llm.route);
 
-  const usage: LlmUsage = {
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheCreationInputTokens: 0,
-    cacheReadInputTokens: 0,
-  };
+  const usage: LlmUsage = sink
+    ? sink.usage
+    : {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheCreationInputTokens: 0,
+        cacheReadInputTokens: 0,
+      };
+  if (sink) sink.route = llm.route;
 
   emit({ type: "phase", label: "画像を受信しました" });
   emit({ type: "phase", label: "文書の向きを確認しています…" });
@@ -298,6 +313,12 @@ export async function streamLiveAnalysis(
 
   const final = await stream.finalMessage();
   addUsage(usage, final.usage);
+  // ここから下は throw しうる。フォールバック先の画面で「原価$0」と誤表示しないよう、
+  // 消費済みトークンと推定原価をこの時点で受け皿に確定させておく。
+  if (sink) {
+    const { rates: sinkRates } = await getModelRates(model, llm.route);
+    sink.costUsd = estimateCostUsd(usage, sinkRates);
+  }
 
   if (final.stop_reason === "refusal") {
     throw new Error("解析リクエストが拒否されました");

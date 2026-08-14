@@ -61,9 +61,46 @@ export type AnalyzeEvent =
       costUsd?: number;
       /** 単価の出典: live=/v1/models実測 / fallback=定数($5/$25) */
       pricingSource?: PricingSource;
+      /**
+       * ライブ解析が失敗してデモへフォールバックしたときのみ。
+       * 失敗までに消費したトークンの推定原価(USD)。
+       * これが入っている done は mode:"demo" だが原価は $0 ではない。
+       */
+      abortedLiveCostUsd?: number;
+      /** 同上: 失敗までに消費したトークン使用量 */
+      abortedLiveUsage?: LlmUsage;
     }
   | { type: "error"; message: string };
 
 export function sseLine(event: AnalyzeEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
+}
+
+/**
+ * ライブ解析が途中で失敗し、デモリプレイへフォールバックしたときに、
+ * done イベントへ「失敗までに実際に消費した分」を載せる。
+ *
+ * なぜ必要か: デモの done は mode:"demo" で usage を持たないため、画面は
+ * 「デモ再生: LLM呼び出しなし(原価 $0)」と表示する。しかしライブが
+ * finalMessage 取得後(refusal / max_tokens / JSON抽出失敗 / スキーマ違反)に
+ * 落ちた場合、トークンは既に課金されている。$0 と表示すると無料だと誤認させる。
+ *
+ * 消費が0のとき(キー未設定・接続前に失敗)は何も足さない=本当に $0。
+ */
+export function withAbortedLiveCost(
+  event: AnalyzeEvent,
+  consumed: { usage: LlmUsage; costUsd: number | null },
+): AnalyzeEvent {
+  if (event.type !== "done") return event;
+  const total =
+    consumed.usage.inputTokens +
+    consumed.usage.outputTokens +
+    consumed.usage.cacheCreationInputTokens +
+    consumed.usage.cacheReadInputTokens;
+  if (total <= 0) return event;
+  return {
+    ...event,
+    abortedLiveUsage: consumed.usage,
+    abortedLiveCostUsd: consumed.costUsd ?? undefined,
+  };
 }
