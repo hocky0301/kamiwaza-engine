@@ -22,7 +22,7 @@ ANTHROPIC_API_KEY=sk-ant-...     # 障害時の直結保険(LLM_FORCE_DIRECT=1 �
 ## テスト・検査
 
 ```bash
-npm test          # vitest run — 823件パス+意図的スキップ1件(RUN_LIVE_PROBE=1 時のみ実行のライブ実測プローブ)
+npm test          # vitest run — 859件パス+意図的スキップ1件(RUN_LIVE_PROBE=1 時のみ実行のライブ実測プローブ)
 npm run test:watch
 npm run lint      # errors 0 / warnings 0
 npm run build
@@ -53,7 +53,7 @@ src/
 │   ├── highlight.ts                出典ハイライトのタッチ規則
 │   ├── demo.ts                     デモのイベント列を決定論的に生成
 │   ├── events.ts                   SSE プロトコル定義(デモ/ライブ共通)
-│   └── __tests__/                  12ファイル・823件(+ライブ実測プローブの意図的skip 1)
+│   └── __tests__/                  16ファイル・859件(+ライブ実測プローブの意図的skip 1)
 └── components/
     ├── KamiwazaApp.tsx             画面状態機械 + SSE クライアント + Undo
     ├── SpecApp.tsx                 決定論的レンダラー(生成アプリの UI)
@@ -73,4 +73,3 @@ src/
 
 Next.js 16.2.10 / React 19.2.4 / Tailwind v4 / TypeScript 5 / `@anthropic-ai/sdk` ^0.110.0 / `sharp` ^0.35.3(サーバ側の回転補正)/ vitest ^4.1.10。パッケージマネージャは npm(`package-lock.json` のみ)。
 
-> **コードを書く前に**: この Next.js は訓練データと異なる。`node_modules/next/dist/docs/` の該当ガイドを読んでから書くこと([AGENTS.md](AGENTS.md))。

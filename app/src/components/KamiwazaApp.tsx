@@ -44,7 +44,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 type Screen = "select" | "analyzing" | "ready";
 
-// 実在企業の実スキャン帳票50枚での検証実績(docs/05参照)。再検証のたびに更新する
+// 実在企業の実スキャン帳票50枚での検証実績。再検証のたびに更新する
 const VERIFIED_STATS = [
   "✓ 実在企業の実スキャン帳票50枚で検証",
   "全項目正解 96%・値精度 99.9%",
