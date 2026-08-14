@@ -182,13 +182,13 @@ export function KamiwazaApp({
   // 解析中: 走査アニメと同じ2.4秒周期でスキャン音(動画C3と同じ音・小さく)
   useEffect(() => {
     if (screen !== "analyzing") return;
-    playSfx("start", 0.35);
-    const id = window.setInterval(() => playSfx("scan", 0.22), 2400);
+    playSfx("start", 0.15);
+    const id = window.setInterval(() => playSfx("scan", 0.10), 2400);
     return () => window.clearInterval(id);
   }, [screen, playSfx]);
   // 完成の瞬間: 変換の一撃(動画の紙→神と同じ音)
   useEffect(() => {
-    if (screen === "ready") playSfx("complete", 0.3);
+    if (screen === "ready") playSfx("complete", 0.15);
   }, [screen, playSfx]);
 
   // 「日本語で書いて直す」— 適用済みパッチ(1ユーザー操作=1グループ)と手術ログ
@@ -241,12 +241,13 @@ export function KamiwazaApp({
     return () => window.clearInterval(id);
   }, [screen]);
 
-  // 完成の瞬間: スマホ幅では生成アプリが写真の下に出て気づけないため、アプリへ寄せる
+  // 完成の瞬間: 縦持ち(1カラム)では生成アプリが紙の下に出て気づけないため、アプリへ寄せる。
+  // デモ再生も同様(iPad縦のブース動線)。md(768px)以上は2カラムで常に見えているので何もしない
   useEffect(() => {
-    if (screen === "ready" && isUpload && window.innerWidth < 768) {
+    if (screen === "ready" && window.innerWidth < 768) {
       appColRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
-  }, [screen, isUpload]);
+  }, [screen]);
 
   const resetStream = useCallback(() => {
     if (readyTimerRef.current !== null) {
@@ -597,7 +598,7 @@ export function KamiwazaApp({
   /** 提案チップ: ネットワークを一切通らずローカルで確実にモーフ(デモの生命線) */
   const applyChip = useCallback(
     (chip: ChipState) => {
-      playSfx("chip", 0.3);
+      playSfx("chip", 0.14);
       if (reconfBusy || chip.disabled) return;
       void runOps(chip.ops);
     },

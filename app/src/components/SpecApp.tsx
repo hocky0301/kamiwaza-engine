@@ -4,6 +4,7 @@
 // LLMはスペックしか出力しないため、UI品質はこちら側で常に担保される。
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { buildZip } from "@/lib/zip";
 import type {
   AppSpec,
   AppRecord,
@@ -724,27 +725,58 @@ const csvEsc = (s: string) => {
 };
 
 /**
- * 全データのJSONエクスポート。仕様(AppSpec)+レコード+明細を1ファイルで書き出す。
- * 「読み取ったデータはその場で持ち帰れる」——保存機能を持たない設計(KNOWN_ISSUES 2-1)の
- * 出口として、画面上のデータを他システムへ渡せる形で出す(ロックインしない)。
+ * データ一式のZIPエクスポート。「1ファイルの謎JSON」ではなく、開けば中身が分かる形で渡す:
+ *   README.txt      … これは何か・各ファイルの説明・保存先の案内
+ *   app_spec.json   … アプリの仕様(AppSpec DSL)
+ *   records.json    … 全レコード
+ *   line_items.json … 明細行
+ *   meta.json       … エクスポート時刻・件数・アプリ名
+ * ブースで持ち帰ってもらう/後で集めてアプリ改善の材料にする、が目的。
  */
-function downloadJson(spec: AppSpec, records: AppRecord[]) {
-  const payload = {
-    exported_at: new Date().toISOString(),
+function downloadExportZip(spec: AppSpec, records: AppRecord[]): string {
+  const enc = new TextEncoder();
+  const now = new Date();
+  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
+  const appName = spec.appName || "kamiwaza";
+  const readme = [
+    `カミワザ エクスポート — ${appName}`,
+    `作成: ${now.toLocaleString("ja-JP")}`,
+    "",
+    "このZIPは、紙の写真から生成された業務アプリのデータ一式です。",
+    "  app_spec.json   … アプリの仕様(フォーム/一覧/承認フロー/集計の定義)",
+    "  records.json    … 登録されているレコード全件",
+    "  line_items.json … 明細行(1件目の紙から読み取ったもの)",
+    "  meta.json       … 件数などの概要",
+    "",
+    "JSONはそのまま他システムへの取り込みに使えます。",
+    "Paper-to-App Engine「カミワザ」 (AI HACKATHON 2026 TOKYO)",
+  ].join("\n");
+  const meta = {
+    exported_at: now.toISOString(),
     app: { name: spec.appName, description: spec.description },
-    spec,
-    records,
-    line_items: spec.firstRecordLines,
+    counts: { records: records.length, line_items: spec.firstRecordLines.length, fields: spec.fields.length },
   };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: "application/json;charset=utf-8",
-  });
+  const zip = buildZip(
+    [
+      { name: "README.txt", data: enc.encode(readme) },
+      { name: "app_spec.json", data: enc.encode(JSON.stringify(spec, null, 2)) },
+      { name: "records.json", data: enc.encode(JSON.stringify(records, null, 2)) },
+      { name: "line_items.json", data: enc.encode(JSON.stringify(spec.firstRecordLines, null, 2)) },
+      { name: "meta.json", data: enc.encode(JSON.stringify(meta, null, 2)) },
+    ],
+    now,
+  );
+  const filename = `カミワザ_${appName}_${stamp}.zip`;
+  const ab = new ArrayBuffer(zip.length);
+  new Uint8Array(ab).set(zip);
+  const blob = new Blob([ab], { type: "application/zip" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${spec.appName || "kamiwaza"}_export.json`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+  return filename;
 }
 
 function downloadBlob(csv: string, filename: string) {
@@ -839,6 +871,9 @@ export function SpecApp({
   patchLog,
   busy,
 }: SpecAppProps) {
+  // エクスポート直後の案内(何がどこに保存されたか)。6秒で消える
+  const [exportToast, setExportToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tab, setTab] = useState<Tab>("form");
   const [costOpen, setCostOpen] = useState(false);
   // デモ$0チップの説明(title)はタッチで見えないため、タップで開ける詳細行を持つ
@@ -982,11 +1017,16 @@ export function SpecApp({
             ⬇ CSV
           </button>
           <button
-            onClick={() => downloadJson(spec, records)}
+            onClick={() => {
+              const fn = downloadExportZip(spec, records);
+              setExportToast(fn);
+              if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+              toastTimerRef.current = setTimeout(() => setExportToast(null), 6000);
+            }}
             className="relative ml-2 my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
-            title="仕様(AppSpec)+全レコード+明細をJSONで書き出し"
+            title="データ一式(仕様+レコード+明細+README)をZIPで保存"
           >
-            ⬇ JSON
+            ⬇ 保存
           </button>
           {spec.lineItems && spec.firstRecordLines.length > 0 && (
             <button
@@ -998,6 +1038,15 @@ export function SpecApp({
             </button>
           )}
         </div>
+        {exportToast && (
+          <div className="mx-4 mt-2 rounded-lg border border-ok/40 bg-ok/10 px-3 py-2 text-xs text-fg flex items-center gap-2">
+            <span className="text-ok">✓</span>
+            <span className="min-w-0 truncate">
+              <b>{exportToast}</b> を保存しました — Macはダウンロードフォルダ、iPadは「ファイル」App →
+              ダウンロードに入ります。中にREADME・仕様・レコード・明細のJSONが入っています
+            </span>
+          </div>
+        )}
 
         {/* コンテンツ — hidden切替で常時マウント(フォームの編集内容をタブ往復で保持) */}
         <div className="flex-1 overflow-y-auto">
