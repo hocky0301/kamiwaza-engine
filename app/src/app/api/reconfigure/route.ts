@@ -121,6 +121,16 @@ async function liveInterpret(
 const MAX_BODY_BYTES = 256 * 1024;
 /** 自由文指示の上限。デモの指示は数十文字で、2000字は口頭指示として十分な余裕 */
 const MAX_INSTRUCTION_CHARS = 2000;
+/**
+ * spec の形状上限。ボディ上限(256KB)だけでは守れない——specBrief は fields と
+ * lineItems.columns を1件1行で展開してプロンプト本文にし、buildReconfigureTools は
+ * field id から enum を組むため、**項目数に比例してトークンが線形に伸びる**。
+ * 256KB の JSON は数千項目を許してしまう。実測の最大シナリオは fields 13・columns 6。
+ * 会場では LAN 越しに iPad から叩く構成(認証なし)のため、形状側にも天井を置く。
+ */
+const MAX_SPEC_FIELDS = 80;
+const MAX_SPEC_COLUMNS = 40;
+const MAX_LABEL_CHARS = 120;
 
 export async function POST(req: Request) {
   const parsed = await readJsonLimited<ReconfigureRequest>(req, MAX_BODY_BYTES);
@@ -138,6 +148,24 @@ export async function POST(req: Request) {
     });
   }
   const { spec, instruction } = body;
+  // 形状ゲート: 項目数・ラベル長がプロンプト長を線形に押し上げるため、ここで止める
+  const fieldCount = Array.isArray(spec.fields) ? spec.fields.length : 0;
+  const columnCount = Array.isArray(spec.lineItems?.columns) ? spec.lineItems.columns.length : 0;
+  const tooLongLabel =
+    (Array.isArray(spec.fields) &&
+      spec.fields.some((f) => typeof f?.label === "string" && f.label.length > MAX_LABEL_CHARS)) ||
+    (Array.isArray(spec.lineItems?.columns) &&
+      spec.lineItems.columns.some(
+        (c) => typeof c?.label === "string" && c.label.length > MAX_LABEL_CHARS,
+      ));
+  if (fieldCount > MAX_SPEC_FIELDS || columnCount > MAX_SPEC_COLUMNS || tooLongLabel) {
+    return new Response(
+      JSON.stringify({
+        error: `spec too large (fields<=${MAX_SPEC_FIELDS}, columns<=${MAX_SPEC_COLUMNS}, label<=${MAX_LABEL_CHARS}chars)`,
+      }),
+      { status: 413, headers: { "Content-Type": "application/json" } },
+    );
+  }
   const hasKey = hasLlmClient();
 
   const encoder = new TextEncoder();
