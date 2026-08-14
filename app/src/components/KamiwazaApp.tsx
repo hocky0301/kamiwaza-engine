@@ -121,9 +121,9 @@ export function KamiwazaApp({
   // ブース用の効果音(提出動画と同一素材)。/sfx/*.mp3 が置いてあるときだけ鳴る
   // (音源の再配布ライセンスが不明なため mp3 はリポジトリに含めない=.gitignore。
   //  ファイルが無い環境では自動的に無音。既定OFF・トグルは localStorage に保存)
-  const [soundOn, setSoundOn] = useState(
-    () => typeof window !== "undefined" && window.localStorage.getItem("kw_sound") === "1",
-  );
+  // 効果音トグルはメモリのみ(保存しない)。「ブラウザストレージ利用は全域0件」の主張を
+  // 真に保つための設計選択——再読込でOFFに戻るため、ブース設営時に🔊を押し直す
+  const [soundOn, setSoundOn] = useState(false);
   // WebAudioで鳴らす: iOS Safariは (a)ユーザー操作外のaudio.play()をブロック
   // (b)HTMLAudioElement.volumeを無視する。AudioContextをトグルのタップ中に生成・resume
   // することで解錠し、GainNodeで音量を制御する
@@ -164,7 +164,6 @@ export function KamiwazaApp({
   const toggleSound = useCallback(() => {
     setSoundOn((v) => {
       const next = !v;
-      window.localStorage.setItem("kw_sound", next ? "1" : "0");
       if (next) {
         // このタップ(ユーザー操作)の中でAudioContextを作る=iOSの解錠条件
         const ctx = audioCtxRef.current ?? new AudioContext();
