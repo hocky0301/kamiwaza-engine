@@ -118,6 +118,53 @@ export function KamiwazaApp({
   // LIVE READY/DEMO MODEバッジの説明(title)はタッチで見えないため、タップで開くポップオーバーを持つ
   const [statusInfoOpen, setStatusInfoOpen] = useState(false);
 
+  // ブース用の効果音(提出動画と同一素材)。/sfx/*.mp3 が置いてあるときだけ鳴る
+  // (音源の再配布ライセンスが不明なため mp3 はリポジトリに含めない=.gitignore。
+  //  ファイルが無い環境では自動的に無音。既定OFF・トグルは localStorage に保存)
+  const [soundOn, setSoundOn] = useState(
+    () => typeof window !== "undefined" && window.localStorage.getItem("kw_sound") === "1",
+  );
+  const toggleSound = useCallback(() => {
+    setSoundOn((v) => {
+      window.localStorage.setItem("kw_sound", v ? "0" : "1");
+      return !v;
+    });
+  }, []);
+  const sfxRef = useRef<Record<string, HTMLAudioElement>>({});
+  const playSfx = useCallback(
+    (name: "scan" | "complete" | "chip" | "start", volume: number) => {
+      if (!soundOnRef.current) return;
+      try {
+        let a = sfxRef.current[name];
+        if (!a) {
+          a = new Audio(`/sfx/${name}.mp3`);
+          sfxRef.current[name] = a;
+        }
+        a.volume = volume;
+        a.currentTime = 0;
+        void a.play().catch(() => {});
+      } catch {
+        /* 音源なし・自動再生ブロックは黙って無視 */
+      }
+    },
+    [],
+  );
+  const soundOnRef = useRef(false);
+  useEffect(() => {
+    soundOnRef.current = soundOn;
+  }, [soundOn]);
+  // 解析中: 走査アニメと同じ2.4秒周期でスキャン音(動画C3と同じ音・小さく)
+  useEffect(() => {
+    if (screen !== "analyzing") return;
+    playSfx("start", 0.35);
+    const id = window.setInterval(() => playSfx("scan", 0.22), 2400);
+    return () => window.clearInterval(id);
+  }, [screen, playSfx]);
+  // 完成の瞬間: 変換の一撃(動画の紙→神と同じ音)
+  useEffect(() => {
+    if (screen === "ready") playSfx("complete", 0.3);
+  }, [screen, playSfx]);
+
   // 「日本語で書いて直す」— 適用済みパッチ(1ユーザー操作=1グループ)と手術ログ
   const [patches, setPatches] = useState<SpecDiff[][]>([]);
   const [patchLog, setPatchLog] = useState<PatchLogEntry[]>([]);
@@ -505,10 +552,11 @@ export function KamiwazaApp({
   /** 提案チップ: ネットワークを一切通らずローカルで確実にモーフ(デモの生命線) */
   const applyChip = useCallback(
     (chip: ChipState) => {
+      playSfx("chip", 0.3);
       if (reconfBusy || chip.disabled) return;
       void runOps(chip.ops);
     },
-    [reconfBusy, runOps],
+    [reconfBusy, runOps, playSfx],
   );
 
   /** 自由文入力: ライブtool use経路。失敗したらローカルのキーワード解釈へ */
@@ -690,6 +738,14 @@ export function KamiwazaApp({
             <span className="hidden sm:inline">← 別の紙を試す</span>
           </button>
         )}
+        {/* 効果音トグル(ブース用)。/sfx/*.mp3 がある環境でのみ実際に鳴る */}
+        <button
+          onClick={toggleSound}
+          className="text-base shrink-0 rounded-full px-2 py-1 border border-line hover:border-dim transition-colors cursor-pointer"
+          title={soundOn ? "効果音ON(タップでOFF)" : "効果音OFF(タップでON)"}
+        >
+          {soundOn ? "🔊" : "🔇"}
+        </button>
         {/* titleツールチップはタッチで見えないため、タップで説明ポップオーバーを開くbutton化 */}
         <span className="relative shrink-0">
           <button
