@@ -124,31 +124,57 @@ export function KamiwazaApp({
   const [soundOn, setSoundOn] = useState(
     () => typeof window !== "undefined" && window.localStorage.getItem("kw_sound") === "1",
   );
-  const toggleSound = useCallback(() => {
-    setSoundOn((v) => {
-      window.localStorage.setItem("kw_sound", v ? "0" : "1");
-      return !v;
-    });
+  // WebAudioで鳴らす: iOS Safariは (a)ユーザー操作外のaudio.play()をブロック
+  // (b)HTMLAudioElement.volumeを無視する。AudioContextをトグルのタップ中に生成・resume
+  // することで解錠し、GainNodeで音量を制御する
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sfxBufRef = useRef<Record<string, AudioBuffer>>({});
+  const loadSfx = useCallback(async (ctx: AudioContext) => {
+    for (const n of ["scan", "complete", "chip", "start"]) {
+      if (sfxBufRef.current[n]) continue;
+      try {
+        const r = await fetch(`/sfx/${n}.mp3`);
+        if (!r.ok) continue;
+        sfxBufRef.current[n] = await ctx.decodeAudioData(await r.arrayBuffer());
+      } catch {
+        /* 音源が置かれていない環境では無音のまま */
+      }
+    }
   }, []);
-  const sfxRef = useRef<Record<string, HTMLAudioElement>>({});
   const playSfx = useCallback(
     (name: "scan" | "complete" | "chip" | "start", volume: number) => {
       if (!soundOnRef.current) return;
+      const ctx = audioCtxRef.current;
+      const buf = sfxBufRef.current[name];
+      if (!ctx || !buf || ctx.state !== "running") return;
       try {
-        let a = sfxRef.current[name];
-        if (!a) {
-          a = new Audio(`/sfx/${name}.mp3`);
-          sfxRef.current[name] = a;
-        }
-        a.volume = volume;
-        a.currentTime = 0;
-        void a.play().catch(() => {});
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const gain = ctx.createGain();
+        gain.gain.value = volume;
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        src.start();
       } catch {
-        /* 音源なし・自動再生ブロックは黙って無視 */
+        /* 再生失敗は無視(主機能に劣後) */
       }
     },
     [],
   );
+  const toggleSound = useCallback(() => {
+    setSoundOn((v) => {
+      const next = !v;
+      window.localStorage.setItem("kw_sound", next ? "1" : "0");
+      if (next) {
+        // このタップ(ユーザー操作)の中でAudioContextを作る=iOSの解錠条件
+        const ctx = audioCtxRef.current ?? new AudioContext();
+        audioCtxRef.current = ctx;
+        void ctx.resume();
+        void loadSfx(ctx);
+      }
+      return next;
+    });
+  }, [loadSfx]);
   const soundOnRef = useRef(false);
   useEffect(() => {
     soundOnRef.current = soundOn;
@@ -442,10 +468,13 @@ export function KamiwazaApp({
         // scenarioIdも送る: ライブ解析が失敗した場合のフォールバック先を
         // 直前に選んでいたシナリオに揃えるため
         void start({ scenarioId, image: { data: img.base64, mediaType: img.mediaType } });
-      } catch {
+      } catch (e) {
+        const detail = e instanceof Error && e.message ? `(${e.message})` : "";
         setError(
-          "画像の読み込みに失敗しました。HEIC形式の場合はJPEG/PNGに変換してお試しください",
+          `画像を読み込めませんでした${detail}。iPad/iPhoneの場合は「設定 → カメラ → フォーマット → 互換性優先」に変更して、もう一度撮影してください(高効率=HEIC形式はブラウザで読み込めません)`,
         );
+        // エラーバナーは画面最上部にある。📷カードは下にあるため、見える位置まで戻す
+        window.scrollTo({ top: 0, behavior: "smooth" });
       } finally {
         setPreparing(false);
       }
@@ -893,7 +922,7 @@ export function KamiwazaApp({
       <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-6 grid grid-cols-1 md:grid-cols-[minmax(300px,5fr)_7fr] gap-6 items-start">
         {/* 進行ストリップ(ライブ撮影のみ): スマホ幅では進行ログが写真の下に隠れるため、
             「動いているか・あと何秒か」を常に見える位置に出す */}
-        {screen === "analyzing" && isUpload && (
+        {screen === "analyzing" && (
           <div className="md:col-span-2 card px-4 py-3 flex items-center gap-3 text-sm">
             {error || failed ? (
               <span className="text-accent shrink-0">⚠</span>
@@ -910,7 +939,9 @@ export function KamiwazaApp({
             {!error && (
               <span className="text-dim ml-auto shrink-0 tabular-nums">
                 {elapsedSec}秒経過
-                <span className="hidden sm:inline"> / 目安 30〜60秒</span>
+                <span className="hidden sm:inline">
+                  {isUpload ? " / 目安 30〜60秒" : " / デモリプレイ"}
+                </span>
               </span>
             )}
           </div>
