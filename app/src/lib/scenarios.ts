@@ -164,7 +164,7 @@ const chumonshoSeeds: AppRecord[] = [
   { order_date: "2026-07-27", supplier: "株式会社 イルカ製作所", orderer: "佐藤", total: 62400, delivery_date: "2026-08-05", note: "", approval_stamp: true },
   { order_date: "2026-07-27", supplier: "シャチホコ鋼材株式会社", orderer: "高橋", total: 148000, delivery_date: "2026-08-12", note: "現場直送", approval_stamp: true },
   { order_date: "2026-07-25", supplier: "株式会社 イルカ製作所", orderer: "佐藤", total: 43500, delivery_date: "2026-08-01", note: "", approval_stamp: true },
-  { order_date: "2026-07-24", supplier: "ミナト商事株式会社", orderer: "鈴木", total: 30400, delivery_date: "2026-07-30", note: "", approval_stamp: false },
+  { order_date: "2026-07-24", supplier: "マンボウ商事株式会社", orderer: "鈴木", total: 30400, delivery_date: "2026-07-30", note: "", approval_stamp: false },
   { order_date: "2026-07-23", supplier: "株式会社 イルカ製作所", orderer: "佐藤", total: 57600, delivery_date: "2026-07-31", note: "", approval_stamp: true },
   { order_date: "2026-07-22", supplier: "シャチホコ鋼材株式会社", orderer: "高橋", total: 71200, delivery_date: "2026-07-29", note: "", approval_stamp: true },
 ];
@@ -392,7 +392,7 @@ const seikyuPaper: PaperElement[] = [
   { kind: "line", x: 5, y: 20.4, w: 44, h: 0.15 },
   // 発行元ブロック(右)+ 赤角印
   { fieldId: "issuer", kind: "printed", x: 60, y: 11.5, w: 30, h: 2.8, text: "シャチホコ鋼材株式会社", size: 2.2, bold: true },
-  { kind: "stamp", x: 86, y: 10.6, w: 6, h: 4.5, text: "北関東", size: 1.5, square: true },
+  { kind: "stamp", x: 86, y: 10.6, w: 6, h: 4.5, text: "シャチホコ", size: 1.5, square: true },
   { kind: "printed", x: 60, y: 14.6, w: 36, h: 2, text: "〒000-0001 東京都架空区海風1-2-3", size: 1.5 },
   { kind: "printed", x: 60, y: 16.6, w: 36, h: 2, text: "TEL: 030-5550-0177  FAX: 030-5550-0178", size: 1.5 },
   { kind: "printed", x: 60, y: 18.6, w: 36, h: 2, text: "取引銀行: カモメ銀行 みなと支店 当座 0098765", size: 1.5 },
@@ -548,8 +548,8 @@ const seikyuSpec: AppSpec = {
 const seikyuSeeds: AppRecord[] = [
   { billing_no: "00000728", closing_date: "2026-07-31", customer: "オルカ精密工業株式会社", issuer: "ラッコ包装株式会社", reg_no: "T2345678901234", prev_amount: 81400, payment: 81400, carryover: 0, purchase: 68000, tax: 6800, billed: 74800, status: "未処理" },
   { billing_no: "00000712", closing_date: "2026-07-25", customer: "オルカ精密工業株式会社", issuer: "株式会社 イルカ製作所", reg_no: "T3456789012345", prev_amount: 102300, payment: 102300, carryover: 0, purchase: 88000, tax: 8800, billed: 96800, status: "支払済" },
-  { billing_no: "00000705", closing_date: "2026-07-25", customer: "オルカ精密工業株式会社", issuer: "ミナト商事株式会社", reg_no: "T4567890123456", prev_amount: 45100, payment: 45100, carryover: 0, purchase: 38000, tax: 3800, billed: 41800, status: "入力済" },
-  { billing_no: "00000691", closing_date: "2026-07-20", customer: "オルカ精密工業株式会社", issuer: "東都運輸株式会社", reg_no: "T5678901234567", prev_amount: 30800, payment: 30800, carryover: 0, purchase: 26000, tax: 2600, billed: 28600, status: "支払済" },
+  { billing_no: "00000705", closing_date: "2026-07-25", customer: "オルカ精密工業株式会社", issuer: "マンボウ商事株式会社", reg_no: "T4567890123456", prev_amount: 45100, payment: 45100, carryover: 0, purchase: 38000, tax: 3800, billed: 41800, status: "入力済" },
+  { billing_no: "00000691", closing_date: "2026-07-20", customer: "オルカ精密工業株式会社", issuer: "アザラシ運輸株式会社", reg_no: "T5678901234567", prev_amount: 30800, payment: 30800, carryover: 0, purchase: 26000, tax: 2600, billed: 28600, status: "支払済" },
 ];
 
 /* ============================================================
@@ -579,7 +579,7 @@ const hacchushoPaper: PaperElement[] = [
   { kind: "printed", x: 56, y: 23.3, w: 40, h: 2.0, text: "マーケティング本部 エリア推進部", size: 1.5 },
   { kind: "printed", x: 56, y: 25.2, w: 40, h: 1.9, text: "〒000-0005 埼玉県架空市桜木2-4-6", size: 1.4 },
   { kind: "printed", x: 56, y: 27.0, w: 40, h: 1.9, text: "TEL: 030-5550-0130", size: 1.4 },
-  { fieldId: "company_seal", kind: "stamp", square: true, x: 88, y: 19.8, w: 6.5, h: 5.0, text: "富士見", rotate: -2 },
+  { fieldId: "company_seal", kind: "stamp", square: true, x: 88, y: 19.8, w: 6.5, h: 5.0, text: "ペンギン", rotate: -2 },
   // 前文
   { fieldId: "quote_no", kind: "printed", x: 5, y: 29.6, w: 90, h: 2.6, text: "2026年7月21日付見積書「J-0718-24」および以下の内容に基づき、貴社に対し発注させていただきます。", size: 1.5 },
   // ■発注内容(7欄・実様式忠実)
@@ -713,10 +713,10 @@ const hacchushoSpec: AppSpec = {
 };
 
 const hacchushoSeeds: AppRecord[] = [
-  { issue_date: "2026-07-27", po_no: "M400012840-01", supplier: "株式会社 マンボウ商事", quote_no: "S-0715-09", project: "夏祭りサンプリングイベント運営(浦和会場)", category: "イベント", area: "東日本", acceptance_date: "2026-08-31", payment_terms: "検収完了月の翌月25日払い", total: 880000, company_seal: true },
+  { issue_date: "2026-07-27", po_no: "M400012840-01", supplier: "株式会社 クジラ企画", quote_no: "S-0715-09", project: "夏祭りサンプリングイベント運営(浦和会場)", category: "イベント", area: "東日本", acceptance_date: "2026-08-31", payment_terms: "検収完了月の翌月25日払い", total: 880000, company_seal: true },
   { issue_date: "2026-07-22", po_no: "M400012811-01", supplier: "カワセミ印刷株式会社", quote_no: "J-0712-08", project: "秋季新商品告知チラシ 印刷・ポスティング(川口エリア)", category: "ポスティング", area: "東日本", acceptance_date: "2026-09-30", payment_terms: "検収完了月の翌月25日払い", total: 297000, company_seal: true },
-  { issue_date: "2026-07-21", po_no: "M400012798-01", supplier: "株式会社 大宮アドセンター", quote_no: "A-0710-31", project: "駅構内ポスターB1 掲出(8月分・大宮駅)", category: "OOH", area: "東日本", acceptance_date: "2026-08-31", payment_terms: "検収完了月の当月末日払い", total: 440000, company_seal: true },
-  { issue_date: "2026-07-17", po_no: "M400012766-01", supplier: "ミナト商事株式会社", quote_no: "M-0708-02", project: "サンプリング用ノベルティ(ウェットティッシュ)調達", category: "サンプリング", area: "関西", acceptance_date: "2026-08-29", payment_terms: "検収完了月の当月末日払い", total: 132000, company_seal: true },
+  { issue_date: "2026-07-21", po_no: "M400012798-01", supplier: "株式会社 セイウチ広告", quote_no: "A-0710-31", project: "駅構内ポスターB1 掲出(8月分・大宮駅)", category: "OOH", area: "東日本", acceptance_date: "2026-08-31", payment_terms: "検収完了月の当月末日払い", total: 440000, company_seal: true },
+  { issue_date: "2026-07-17", po_no: "M400012766-01", supplier: "マンボウ商事株式会社", quote_no: "M-0708-02", project: "サンプリング用ノベルティ(ウェットティッシュ)調達", category: "サンプリング", area: "関西", acceptance_date: "2026-08-29", payment_terms: "検収完了月の当月末日払い", total: 132000, company_seal: true },
   { issue_date: "2026-07-15", po_no: "M400012750-01", supplier: "カワセミ印刷株式会社", quote_no: "J-0705-11", project: "店頭POP 増刷(中日本 8月分)", category: "その他", area: "中日本", acceptance_date: "2026-08-31", payment_terms: "検収完了月の翌月25日払い", total: 96800, company_seal: false },
 ];
 
@@ -794,7 +794,7 @@ export const SCENARIOS: Scenario[] = [
     spec: hacchushoSpec,
     seedRecords: hacchushoSeeds,
     alert:
-      "今月の発注は6件・合計 ¥2,175,800。うち「株式会社 マンボウ商事」のイベント運営費 ¥880,000 が1件で全体の40%を占めています。検収予定日から逆算すると、支払は 9月25日に ¥976,800、10月25日に ¥627,000 が集中します。また「店頭POP 増刷(中日本 8月分)」¥96,800 が押印未完了のままです。",
+      "今月の発注は6件・合計 ¥2,175,800。うち「株式会社 クジラ企画」のイベント運営費 ¥880,000 が1件で全体の40%を占めています。検収予定日から逆算すると、支払は 9月25日に ¥976,800、10月25日に ¥627,000 が集中します。また「店頭POP 増刷(中日本 8月分)」¥96,800 が押印未完了のままです。",
     question: {
       fieldId: "company_seal",
       question:

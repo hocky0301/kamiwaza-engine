@@ -664,7 +664,7 @@ function LineItemsTable({
                   return (
                     <td
                       key={c.id}
-                      className={`px-3 py-1.5 ${c.type === "number" ? "text-right tabular-nums" : ""} ${
+                      className={`px-3 py-1.5 whitespace-nowrap ${c.type === "number" ? "text-right tabular-nums" : ""} ${
                         viol ? "text-accent font-bold bg-accent-soft/50" : ""
                       }`}
                       title={
@@ -845,10 +845,10 @@ export function SpecApp({
 
       <div className="card flex-1 overflow-hidden flex flex-col">
         {/* アプリヘッダ */}
-        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-line bg-panel">
-          <span className="text-2xl">{spec.icon}</span>
-          <div className="flex-1 min-w-0">
-            <div className="font-bold">{spec.appName}</div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3.5 border-b border-line bg-panel">
+          <span className="text-2xl shrink-0">{spec.icon}</span>
+          <div className="flex-1 min-w-[11rem]">
+            <div className="font-bold truncate">{spec.appName}</div>
             <div className="text-dim text-[11px] truncate">{spec.description}</div>
           </div>
           {/* 原価チップ: ライブ=トークン実測×公表単価の推定累計 / デモ=$0の誠実表示。
