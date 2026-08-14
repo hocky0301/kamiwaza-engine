@@ -855,7 +855,7 @@ const ALERT_FACTS: Record<string, (s: Scenario, records: AppRecord[]) => void> =
     expect(s.alert).toContain(yen(total));
 
     const top = [...records].sort((a, b) => asNumber(b.total) - asNumber(a.total))[0];
-    expect(top.supplier).toBe("株式会社 マンボウ商事");
+    expect(top.supplier).toBe("株式会社 クジラ企画");
     expect(asNumber(top.total)).toBe(880000);
     expect(s.alert).toContain(yen(880000));
     expect(Math.round((asNumber(top.total) / total) * 100)).toBe(40);
