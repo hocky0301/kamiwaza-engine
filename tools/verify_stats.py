@@ -65,10 +65,10 @@ def main() -> int:
     if not approx(48 / 50 * 100, 96.0, 1e-9):
         failures.append("48/50 != 96%")
     if not (approx(lo * 100, 86.3, 0.05) and approx(hi * 100, 99.5, 0.05)):
-        failures.append(f"95%CI mismatch: got [{lo*100:.1f}, {hi*100:.1f}], claim [86.3, 99.5]")
+        failures.append(f"95%CI mismatch: got [{lo * 100:.1f}, {hi * 100:.1f}], claim [86.3, 99.5]")
 
     # 2) 値レベル精度
-    if f"{1516/1518*100:.2f}" != "99.87":
+    if f"{1516 / 1518 * 100:.2f}" != "99.87":
         failures.append("1516/1518 != 99.87%")
 
     # 3) v1内訳が50で閉じる(success 38 / partial 11 / 自動fail 1)
@@ -79,9 +79,7 @@ def main() -> int:
         failures.append("v2 arithmetic does not reach 48")
 
     # 4) run-002 のキャッシュ内訳
-    run2: dict[str, object] = json.loads(
-        (ROOT / "tools/cost-batch/out/run-002.json").read_text()
-    )
+    run2: dict[str, object] = json.loads((ROOT / "tools/cost-batch/out/run-002.json").read_text())
     files_raw = run2["files"]
     assert isinstance(files_raw, list)
     files: list[dict[str, object]] = [f for f in files_raw if isinstance(f, dict)]
@@ -106,7 +104,7 @@ def main() -> int:
         print("NG:", *failures, sep="\n  - ")
         return 1
     print(
-        f"OK: 96% CI=[{lo*100:.1f},{hi*100:.1f}] / 99.87% / v1=50枚で閉じる / "
+        f"OK: 96% CI=[{lo * 100:.1f},{hi * 100:.1f}] / 99.87% / v1=50枚で閉じる / "
         f"cache ${cache_part:.6f} + output ${out_part:.6f} = ${diff:.6f}"
     )
     return 0
