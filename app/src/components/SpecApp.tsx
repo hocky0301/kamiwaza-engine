@@ -4,7 +4,7 @@
 // LLMはスペックしか出力しないため、UI品質はこちら側で常に担保される。
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { buildZip } from "@/lib/zip";
+import { buildZip, sanitizeFilenameStem } from "@/lib/zip";
 import type {
   AppSpec,
   AppRecord,
@@ -81,6 +81,8 @@ interface SpecAppProps {
   spec: AppSpec;
   /** records[0] が今スキャンした1件目 */
   records: AppRecord[];
+  /** 撮影した紙のJPEG(base64)。デモ再生ではnull=ZIPに写真は入らない */
+  paperImageBase64?: string | null;
   alert: string | null;
   mode: "demo" | "live";
   /** ライブ経路の推定原価チップ。デモ・usage欠落時はnull(実額を捏造しない) */
@@ -733,16 +735,21 @@ const csvEsc = (s: string) => {
  *   meta.json       … エクスポート時刻・件数・アプリ名
  * ブースで持ち帰ってもらう/後で集めてアプリ改善の材料にする、が目的。
  */
-function downloadExportZip(spec: AppSpec, records: AppRecord[]): string {
+function downloadExportZip(
+  spec: AppSpec,
+  records: AppRecord[],
+  paperImageBase64: string | null,
+  stem: string,
+): string {
   const enc = new TextEncoder();
   const now = new Date();
-  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${String(now.getHours()).padStart(2, "0")}${String(now.getMinutes()).padStart(2, "0")}`;
   const appName = spec.appName || "kamiwaza";
   const readme = [
     `カミワザ エクスポート — ${appName}`,
     `作成: ${now.toLocaleString("ja-JP")}`,
     "",
     "このZIPは、紙の写真から生成された業務アプリのデータ一式です。",
+    ...(paperImageBase64 ? ["  paper_photo.jpg … 撮影した紙の写真(元データ)"] : []),
     "  app_spec.json   … アプリの仕様(フォーム/一覧/承認フロー/集計の定義)",
     "  records.json    … 登録されているレコード全件",
     "  line_items.json … 明細行(1件目の紙から読み取ったもの)",
@@ -755,18 +762,23 @@ function downloadExportZip(spec: AppSpec, records: AppRecord[]): string {
     exported_at: now.toISOString(),
     app: { name: spec.appName, description: spec.description },
     counts: { records: records.length, line_items: spec.firstRecordLines.length, fields: spec.fields.length },
+    has_paper_photo: !!paperImageBase64,
   };
-  const zip = buildZip(
-    [
-      { name: "README.txt", data: enc.encode(readme) },
-      { name: "app_spec.json", data: enc.encode(JSON.stringify(spec, null, 2)) },
-      { name: "records.json", data: enc.encode(JSON.stringify(records, null, 2)) },
-      { name: "line_items.json", data: enc.encode(JSON.stringify(spec.firstRecordLines, null, 2)) },
-      { name: "meta.json", data: enc.encode(JSON.stringify(meta, null, 2)) },
-    ],
-    now,
-  );
-  const filename = `カミワザ_${appName}_${stamp}.zip`;
+  const files = [
+    { name: "README.txt", data: enc.encode(readme) },
+    { name: "app_spec.json", data: enc.encode(JSON.stringify(spec, null, 2)) },
+    { name: "records.json", data: enc.encode(JSON.stringify(records, null, 2)) },
+    { name: "line_items.json", data: enc.encode(JSON.stringify(spec.firstRecordLines, null, 2)) },
+    { name: "meta.json", data: enc.encode(JSON.stringify(meta, null, 2)) },
+  ];
+  if (paperImageBase64) {
+    const bin = atob(paperImageBase64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    files.unshift({ name: "paper_photo.jpg", data: bytes });
+  }
+  const zip = buildZip(files, now);
+  const filename = `${stem}.zip`;
   const ab = new ArrayBuffer(zip.length);
   new Uint8Array(ab).set(zip);
   const blob = new Blob([ab], { type: "application/zip" });
@@ -855,6 +867,7 @@ function costDetailLines(cost: CostState): string[] {
 export function SpecApp({
   spec,
   records,
+  paperImageBase64 = null,
   alert,
   mode,
   cost,
@@ -873,6 +886,8 @@ export function SpecApp({
 }: SpecAppProps) {
   // エクスポート直後の案内(何がどこに保存されたか)。6秒で消える
   const [exportToast, setExportToast] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportName, setExportName] = useState("");
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tab, setTab] = useState<Tab>("form");
   const [costOpen, setCostOpen] = useState(false);
@@ -1018,10 +1033,10 @@ export function SpecApp({
           </button>
           <button
             onClick={() => {
-              const fn = downloadExportZip(spec, records);
-              setExportToast(fn);
-              if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-              toastTimerRef.current = setTimeout(() => setExportToast(null), 6000);
+              const d = new Date();
+              const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+              setExportName(`${ymd}_${spec.appName || "kamiwaza"}`);
+              setExportOpen((o) => !o);
             }}
             className="relative ml-2 my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
             title="データ一式(仕様+レコード+明細+README)をZIPで保存"
@@ -1038,12 +1053,39 @@ export function SpecApp({
             </button>
           )}
         </div>
+        {exportOpen && (
+          <div className="mx-4 mt-2 rounded-lg border border-line bg-panel px-3 py-2 flex items-center gap-2 text-sm">
+            <span className="text-dim text-xs shrink-0">ファイル名</span>
+            <input
+              value={exportName}
+              onChange={(e) => setExportName(e.target.value)}
+              className="flex-1 min-w-0 rounded-md border border-line bg-card px-2 py-1.5 text-sm"
+              autoFocus
+            />
+            <span className="text-dim text-xs shrink-0">.zip</span>
+            <button
+              onClick={() => {
+                const d = new Date();
+                const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+                const stem = sanitizeFilenameStem(exportName, `${ymd}_${spec.appName || "kamiwaza"}`);
+                const fn = downloadExportZip(spec, records, paperImageBase64, stem);
+                setExportOpen(false);
+                setExportToast(fn);
+                if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+                toastTimerRef.current = setTimeout(() => setExportToast(null), 6000);
+              }}
+              className="shrink-0 rounded-md bg-accent text-white px-3 py-1.5 text-sm font-bold cursor-pointer"
+            >
+              保存
+            </button>
+          </div>
+        )}
         {exportToast && (
           <div className="mx-4 mt-2 rounded-lg border border-ok/40 bg-ok/10 px-3 py-2 text-xs text-fg flex items-center gap-2">
             <span className="text-ok">✓</span>
             <span className="min-w-0 truncate">
               <b>{exportToast}</b> を保存しました — Macはダウンロードフォルダ、iPadは「ファイル」App →
-              ダウンロードに入ります。中にREADME・仕様・レコード・明細のJSONが入っています
+              ダウンロードに入ります。中にREADME・仕様・レコード・明細{paperImageBase64 ? "・撮影した紙の写真" : ""}が入っています
             </span>
           </div>
         )}

@@ -39,3 +39,16 @@ describe("buildZip", () => {
     expect(flags & 0x0800).toBe(0x0800);
   });
 });
+
+import { sanitizeFilenameStem } from "../zip";
+describe("sanitizeFilenameStem", () => {
+  it("パス区切り・禁止文字を除去し、空白は_へ", () => {
+    expect(sanitizeFilenameStem("2026/08\\15: 発注*書?", "x")).toBe("20260815_発注書");
+  });
+  it("空なら既定値", () => {
+    expect(sanitizeFilenameStem("  ", "20260815_kamiwaza")).toBe("20260815_kamiwaza");
+  });
+  it("80文字で切る", () => {
+    expect(sanitizeFilenameStem("あ".repeat(120), "x")).toHaveLength(80);
+  });
+});

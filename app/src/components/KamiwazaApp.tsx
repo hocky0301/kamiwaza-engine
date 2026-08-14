@@ -1002,6 +1002,7 @@ export function KamiwazaApp({
             <SpecApp
               spec={reconfiguredSpec}
               records={records}
+              paperImageBase64={uploaded ? uploaded.base64 : null}
               alert={mode === "demo" ? scenario.alert : null}
               mode={mode}
               cost={mode === "live" ? cost : null}
