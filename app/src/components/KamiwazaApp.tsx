@@ -823,13 +823,24 @@ export function KamiwazaApp({
             「動いているか・あと何秒か」を常に見える位置に出す */}
         {screen === "analyzing" && isUpload && (
           <div className="md:col-span-2 card px-4 py-3 flex items-center gap-3 text-sm">
-            <span className="inline-block w-4 h-4 rounded-full border-2 border-accent border-t-transparent spin-slow shrink-0" />
+            {error || failed ? (
+              <span className="text-accent shrink-0">⚠</span>
+            ) : (
+              <span className="inline-block w-4 h-4 rounded-full border-2 border-accent border-t-transparent spin-slow shrink-0" />
+            )}
             <span className="font-medium truncate">
-              {phases.length > 0 ? phases[phases.length - 1] : "サーバーへ接続中…"}
+              {error
+                ? "解析を中断しました"
+                : phases.length > 0
+                  ? phases[phases.length - 1]
+                  : "サーバーへ接続中…"}
             </span>
-            <span className="text-dim ml-auto shrink-0 tabular-nums">
-              {elapsedSec}秒経過<span className="hidden sm:inline"> / 目安 約30秒</span>
-            </span>
+            {!error && (
+              <span className="text-dim ml-auto shrink-0 tabular-nums">
+                {elapsedSec}秒経過
+                <span className="hidden sm:inline"> / 目安 30〜60秒</span>
+              </span>
+            )}
           </div>
         )}
         {/* 左: 紙 */}
