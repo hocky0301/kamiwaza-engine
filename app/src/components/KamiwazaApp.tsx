@@ -463,11 +463,27 @@ export function KamiwazaApp({
 
   const answerQuestion = useCallback(
     (i: number) => {
+      // 監査ログ(clarify): どの低信頼フィールドに人が何と答えたか(値は送らない)
+      setQuestion((q) => {
+        if (q && q.answer === null) {
+          void fetch("/api/audit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              event: "clarify",
+              fieldId: q.fieldId,
+              choiceIndex: i,
+              mode,
+            }),
+          }).catch(() => {});
+        }
+        return q;
+      });
       // 再構成の適用中はspecスナップショットの整合が崩れるため回答を受け付けない
       if (reconfBusy) return;
       setQuestion((q) => (q ? { ...q, answer: i } : q));
     },
-    [reconfBusy],
+    [reconfBusy, mode],
   );
 
   // 逆質問の回答をスペックに反映した「有効スペック」

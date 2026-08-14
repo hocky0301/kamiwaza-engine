@@ -9,6 +9,7 @@ import type { AppSpec } from "@/lib/appspec";
 import type { LlmUsage, PricingSource } from "@/lib/events";
 import { getLlmClient, hasLlmClient } from "@/lib/llm-client";
 import { estimateCostUsd, getModelRates } from "@/lib/llm-pricing";
+import { appendAudit, sha16 } from "@/lib/audit";
 import { payloadTooLarge, readJsonLimited } from "@/lib/http";
 import {
   applyDiffs,
@@ -195,6 +196,29 @@ export async function POST(req: Request) {
           emit({ type: "patch", diff: diffs[i], ok: r.ok, reason: r.reason, summary: r.summary });
         });
         emit({ type: "rdone", applied, usage, costUsd, pricingSource });
+        // 監査ログ: 「日本語で書いて直す」=人間がモデル出力を作り替えた記録(操作種別とfieldIdのみ)
+        void appendAudit({
+          ts: new Date().toISOString(),
+          event: "reconfigure",
+          spec_hash_before: sha16(JSON.stringify(spec)),
+          diff_applied: diffs.map((d, i) => ({
+            op: d.op,
+            fieldId:
+              "fieldId" in d && typeof (d as { fieldId?: unknown }).fieldId === "string"
+                ? (d as { fieldId: string }).fieldId
+                : undefined,
+            ok: results[i]?.ok ?? false,
+          })),
+          tokens: usage
+            ? {
+                in: usage.inputTokens,
+                out: usage.outputTokens,
+                cacheRead: usage.cacheReadInputTokens,
+                cacheCreation: usage.cacheCreationInputTokens,
+              }
+            : undefined,
+          cost_usd: costUsd,
+        });
       };
 
       try {

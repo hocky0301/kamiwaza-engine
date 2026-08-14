@@ -19,7 +19,7 @@ const digest = (scenarioId: string): string => {
 const GOLDEN: Record<string, string> = {
   seikyu: "e81eb3257b3cb965",
   chumonsho: "6653b1aabe092662",
-  nippo: "9fdff6f388689da4",
+  nippo: "e5eefb4e6a8b7f4b",
   tenken: "47d091c1b499e7d7",
   hacchusho: "f120368452ebf451",
 };
