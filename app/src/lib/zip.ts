@@ -100,3 +100,12 @@ export function buildZip(files: ZipFile[], now: Date = new Date()): Uint8Array {
   );
   return cat(...chunks, centralBlob, eocd);
 }
+
+/** エクスポートのファイル名(拡張子抜き)を安全化: パス区切り・制御文字を除去、空なら既定値 */
+export function sanitizeFilenameStem(stem: string, fallback: string): string {
+  const cleaned = stem
+    .replace(/[\/\\:*?"<>|\x00-\x1f]/g, "")
+    .trim()
+    .replace(/\s+/g, "_");
+  return cleaned.length > 0 ? cleaned.slice(0, 80) : fallback;
+}
