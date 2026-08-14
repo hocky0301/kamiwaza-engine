@@ -723,6 +723,30 @@ const csvEsc = (s: string) => {
   return `"${safe.replace(/"/g, '""').replace(/\n/g, " ")}"`;
 };
 
+/**
+ * 全データのJSONエクスポート。仕様(AppSpec)+レコード+明細を1ファイルで書き出す。
+ * 「読み取ったデータはその場で持ち帰れる」——保存機能を持たない設計(KNOWN_ISSUES 2-1)の
+ * 出口として、画面上のデータを他システムへ渡せる形で出す(ロックインしない)。
+ */
+function downloadJson(spec: AppSpec, records: AppRecord[]) {
+  const payload = {
+    exported_at: new Date().toISOString(),
+    app: { name: spec.appName, description: spec.description },
+    spec,
+    records,
+    line_items: spec.firstRecordLines,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${spec.appName || "kamiwaza"}_export.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function downloadBlob(csv: string, filename: string) {
   // 先頭のBOMでExcelにUTF-8と認識させる(日本語の文字化け防止)
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
@@ -956,6 +980,13 @@ export function SpecApp({
             title="Excelで開けるCSVを書き出し"
           >
             ⬇ CSV
+          </button>
+          <button
+            onClick={() => downloadJson(spec, records)}
+            className="relative ml-2 my-1.5 rounded-lg border border-line px-3 text-xs text-dim hover:text-fg hover:border-dim transition-colors cursor-pointer whitespace-nowrap shrink-0 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-2 pointer-coarse:after:inset-x-0 pointer-coarse:after:content-['']"
+            title="仕様(AppSpec)+全レコード+明細をJSONで書き出し"
+          >
+            ⬇ JSON
           </button>
           {spec.lineItems && spec.firstRecordLines.length > 0 && (
             <button

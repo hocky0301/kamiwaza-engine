@@ -6,6 +6,7 @@ import { buildDemoSequence } from "@/lib/demo";
 import { getScenario } from "@/lib/scenarios";
 import { streamLiveAnalysis, type LiveUsageSink } from "@/lib/claude-live";
 import { withAbortedLiveCost } from "@/lib/events";
+import { appendAudit, sha16 } from "@/lib/audit";
 import { sseLine, type AnalyzeEvent } from "@/lib/events";
 import { hasLlmClient } from "@/lib/llm-client";
 import { payloadTooLarge, readJsonLimited } from "@/lib/http";
@@ -39,6 +40,10 @@ export async function POST(req: Request) {
   }
   const useLive = hasLlmClient() && !!body.image?.data;
 
+  const startedAt = Date.now();
+  const inputHash = body.image?.data ? sha16(body.image.data) : undefined;
+  let fallbackReason: string | undefined;
+  let lastValidation: { ok: boolean; violations: number } | undefined;
   const encoder = new TextEncoder();
   let closed = false;
 
@@ -46,6 +51,31 @@ export async function POST(req: Request) {
     async start(controller) {
       const emit = (e: AnalyzeEvent) => {
         if (closed) return;
+        if (e.type === "done") {
+          // 監査ログ(1解析=1行・画像はハッシュのみ)。awaitしない=主機能に劣後
+          void appendAudit({
+            ts: new Date().toISOString(),
+            event: "analyze",
+            mode: e.mode,
+            input_hash: inputHash,
+            spec_hash: sha16(JSON.stringify(e.spec)),
+            route: e.llmRoute,
+            tokens: e.usage
+              ? {
+                  in: e.usage.inputTokens,
+                  out: e.usage.outputTokens,
+                  cacheRead: e.usage.cacheReadInputTokens,
+                  cacheCreation: e.usage.cacheCreationInputTokens,
+                }
+              : undefined,
+            cost_usd: e.costUsd,
+            duration_ms: Date.now() - startedAt,
+            validation: lastValidation,
+            fallback_reason: fallbackReason,
+            aborted_live_cost_usd: e.abortedLiveCostUsd,
+          });
+        }
+        if (e.type === "validation") lastValidation = { ok: e.ok, violations: e.violations };
         try {
           controller.enqueue(encoder.encode(sseLine(e)));
         } catch {
@@ -83,6 +113,7 @@ export async function POST(req: Request) {
           } catch (err) {
             // 本番ピッチの保険: ライブ解析が死んでもデモは止めない
             console.error("live analysis failed:", err);
+            fallbackReason = err instanceof Error ? err.message.slice(0, 200) : "unknown";
             emit({
               type: "phase",
               label: "ライブ解析に失敗したため、デモデータで続行します",
