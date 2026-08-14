@@ -126,6 +126,8 @@ export function KamiwazaApp({
   // 推定原価の累計(解析+ライブ再構成)。ライブ経路でusage実測があるときのみ非null。
   // Undoしても減算しない(トークンは実際に消費済み=誠実)
   const [cost, setCost] = useState<CostState | null>(null);
+  // ライブ失敗→デモ続行時に、失敗までに消費した推定原価(nullなら本当に$0)
+  const [abortedLiveCost, setAbortedLiveCost] = useState<number | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const readyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -179,6 +181,7 @@ export function KamiwazaApp({
       readyTimerRef.current = null;
     }
     setPhases([]);
+    setAbortedLiveCost(null);
     setMeta(null);
     setFields([]);
     setLineItems(null);
@@ -261,6 +264,8 @@ export function KamiwazaApp({
         );
         break;
       case "done": {
+        // ライブ失敗→デモ続行の場合、消費済みトークンの実額が載って届く($0と言わせない)
+        setAbortedLiveCost(ev.abortedLiveCostUsd ?? null);
         // 三重保険 第2層: done.spec を正としてストリーム組み立て状態を照合・復元する。
         // 正常時は streamed ≡ done.spec(ライブ実測で確認済み・デモは構成上恒等)なので
         // 視覚的差分ゼロ。デルタ重複による文字列破損・SSE行破損によるイベント欠落など
@@ -885,6 +890,7 @@ export function KamiwazaApp({
               alert={mode === "demo" ? scenario.alert : null}
               mode={mode}
               cost={mode === "live" ? cost : null}
+              abortedLiveCost={abortedLiveCost}
               onHighlight={setHighlight}
               onHighlightToggle={handleHighlightToggle}
               question={question}

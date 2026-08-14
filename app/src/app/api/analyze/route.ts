@@ -4,7 +4,8 @@
 
 import { buildDemoSequence } from "@/lib/demo";
 import { getScenario } from "@/lib/scenarios";
-import { streamLiveAnalysis } from "@/lib/claude-live";
+import { streamLiveAnalysis, type LiveUsageSink } from "@/lib/claude-live";
+import { withAbortedLiveCost } from "@/lib/events";
 import { sseLine, type AnalyzeEvent } from "@/lib/events";
 import { hasLlmClient } from "@/lib/llm-client";
 import { payloadTooLarge, readJsonLimited } from "@/lib/http";
@@ -52,19 +53,33 @@ export async function POST(req: Request) {
         }
       };
 
+      // ライブ失敗時に「消費済みトークン」を持ち越す受け皿。
+      // これが非ゼロのままデモへ落ちた場合、原価$0と表示すると誤認になる。
+      const sink: LiveUsageSink = {
+        usage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheCreationInputTokens: 0,
+          cacheReadInputTokens: 0,
+        },
+        route: null,
+        costUsd: null,
+      };
+
       const runDemo = async (scenarioId: string) => {
         const scenario = getScenario(scenarioId);
         for (const { delay, event } of buildDemoSequence(scenario)) {
           if (closed) return;
           await sleep(delay);
-          emit(event);
+          // done にライブ失敗分の実消費を載せて、画面が$0と言い切らないようにする
+          emit(withAbortedLiveCost(event, sink));
         }
       };
 
       try {
         if (useLive) {
           try {
-            await streamLiveAnalysis(body.image!, emit);
+            await streamLiveAnalysis(body.image!, emit, sink);
           } catch (err) {
             // 本番ピッチの保険: ライブ解析が死んでもデモは止めない
             console.error("live analysis failed:", err);
