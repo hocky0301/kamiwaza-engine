@@ -2,7 +2,7 @@
 
 // カミワザ本体: 紙を選ぶ/撮る → 解析ストリーム → 生成アプリ、の状態機械。
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AppSpec,
   AppRecord,
@@ -148,6 +148,30 @@ export function KamiwazaApp({
 
   const scenario = getScenario(scenarioId);
   const isUpload = uploaded !== null;
+
+  // 撮影フローの体感対策(2026-08-14 実機フィードバック):
+  // ①撮影直後の画像縮小中は select 画面のまま無反応に見える → preparing で即時フィードバック
+  // ②スマホ幅では進行ログが写真の下に隠れる → 経過秒つきの進行ストリップを常時見える位置に出す
+  const [preparing, setPreparing] = useState(false);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const appColRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (screen !== "analyzing") return;
+    const t0 = Date.now();
+    const id = window.setInterval(
+      () => setElapsedSec(Math.floor((Date.now() - t0) / 1000)),
+      1000,
+    );
+    return () => window.clearInterval(id);
+  }, [screen]);
+
+  // 完成の瞬間: スマホ幅では生成アプリが写真の下に出て気づけないため、アプリへ寄せる
+  useEffect(() => {
+    if (screen === "ready" && isUpload && window.innerWidth < 768) {
+      appColRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [screen, isUpload]);
 
   const resetStream = useCallback(() => {
     if (readyTimerRef.current !== null) {
@@ -296,6 +320,7 @@ export function KamiwazaApp({
   const start = useCallback(
     async (payload: { scenarioId?: string; image?: { data: string; mediaType: string } }) => {
       resetStream();
+      setElapsedSec(0);
       setScreen("analyzing");
       window.scrollTo({ top: 0 });
       const ac = new AbortController();
@@ -358,6 +383,7 @@ export function KamiwazaApp({
   const startUpload = useCallback(
     async (file: File) => {
       setError(null);
+      setPreparing(true);
       try {
         const img = await downscaleImage(file);
         setUploaded(img);
@@ -368,6 +394,8 @@ export function KamiwazaApp({
         setError(
           "画像の読み込みに失敗しました。HEIC形式の場合はJPEG/PNGに変換してお試しください",
         );
+      } finally {
+        setPreparing(false);
       }
     },
     [start, scenarioId],
@@ -745,20 +773,32 @@ export function KamiwazaApp({
                 // デスクトップのブラウザはcaptureを無視し、通常のファイル選択のまま
                 capture="environment"
                 className="hidden"
-                disabled={!liveAvailable}
+                disabled={!liveAvailable || preparing}
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (f) void startUpload(f);
                   e.target.value = "";
                 }}
               />
-              <span className="text-4xl">📷</span>
-              <div className="font-bold">自分の紙を撮る</div>
-              <div className="text-dim text-xs leading-relaxed">
-                {liveAvailable
-                  ? "手元の帳票を撮影して、Claude Vision でライブ解析します"
-                  : "ORCAROUTER_API_KEY または ANTHROPIC_API_KEY を設定すると、実物の紙のライブ解析が有効になります"}
-              </div>
+              {preparing ? (
+                <>
+                  <span className="inline-block w-9 h-9 rounded-full border-[3px] border-accent border-t-transparent spin-slow" />
+                  <div className="font-bold">画像を準備しています…</div>
+                  <div className="text-dim text-xs leading-relaxed">
+                    このまま数秒お待ちください。続けて解析が始まります
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span className="text-4xl">📷</span>
+                  <div className="font-bold">自分の紙を撮る</div>
+                  <div className="text-dim text-xs leading-relaxed">
+                    {liveAvailable
+                      ? "手元の帳票を撮影して、Claude Vision でライブ解析します"
+                      : "ORCAROUTER_API_KEY または ANTHROPIC_API_KEY を設定すると、実物の紙のライブ解析が有効になります"}
+                  </div>
+                </>
+              )}
             </label>
           </div>
 
@@ -774,6 +814,19 @@ export function KamiwazaApp({
     <div className="min-h-screen flex flex-col">
       {header}
       <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-6 grid grid-cols-1 md:grid-cols-[minmax(300px,5fr)_7fr] gap-6 items-start">
+        {/* 進行ストリップ(ライブ撮影のみ): スマホ幅では進行ログが写真の下に隠れるため、
+            「動いているか・あと何秒か」を常に見える位置に出す */}
+        {screen === "analyzing" && isUpload && (
+          <div className="md:col-span-2 card px-4 py-3 flex items-center gap-3 text-sm">
+            <span className="inline-block w-4 h-4 rounded-full border-2 border-accent border-t-transparent spin-slow shrink-0" />
+            <span className="font-medium truncate">
+              {phases.length > 0 ? phases[phases.length - 1] : "サーバーへ接続中…"}
+            </span>
+            <span className="text-dim ml-auto shrink-0 tabular-nums">
+              {elapsedSec}秒経過<span className="hidden sm:inline"> / 目安 約30秒</span>
+            </span>
+          </div>
+        )}
         {/* 左: 紙 */}
         <div className="md:sticky md:top-6">
           <div className="text-xs text-dim mb-2 flex items-center gap-2">
@@ -798,7 +851,7 @@ export function KamiwazaApp({
         {/* 右: ビルド or アプリ。
             min-w-0 がないとグリッド項目の min-width:auto が中身の最小幅まで広がり、
             タブレット幅(768px前後)でページ全体が横スクロールして右端が切れる */}
-        <div className="min-w-0 min-h-[70vh] md:h-[calc(100vh-7.5rem)] flex flex-col">
+        <div ref={appColRef} className="min-w-0 min-h-[70vh] md:h-[calc(100vh-7.5rem)] flex flex-col">
           {error && (
             <div className="card border-accent/60 bg-accent-soft p-4 mb-3 text-sm">
               ⚠ {error}
