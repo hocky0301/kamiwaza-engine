@@ -192,10 +192,10 @@ export async function streamLiveAnalysis(
 
   const llm = getLlmClient();
   if (!llm) throw new Error("LLMのAPIキーが設定されていません");
-  const { client, model } = llm;
-  console.log(`live analysis via ${llm.route} (${model})`);
+  const { client, model, route } = llm;
+  console.log(`live analysis via ${route} (${model})`);
   // 原価チップ用の単価を先に温める(解析中に取得が終わり、done発行時の待ちゼロ)
-  warmPricingCache(llm.route);
+  warmPricingCache(route);
 
   const usage: LlmUsage = sink
     ? sink.usage
@@ -205,8 +205,29 @@ export async function streamLiveAnalysis(
         cacheCreationInputTokens: 0,
         cacheReadInputTokens: 0,
       };
-  if (sink) sink.route = llm.route;
+  if (sink) sink.route = route;
 
+  // どの地点で throw しても、消費済みトークンの推定原価を必ず受け皿へ残す。
+  // (finalMessage 到達前の回線断・429・500・ストールも対象。getModelRates は throw しない)
+  const settleSink = async () => {
+    if (!sink) return;
+    const total =
+      usage.inputTokens +
+      usage.outputTokens +
+      usage.cacheCreationInputTokens +
+      usage.cacheReadInputTokens;
+    if (total <= 0) return;
+    const { rates } = await getModelRates(model, route);
+    sink.costUsd = estimateCostUsd(usage, rates);
+  };
+
+  try {
+    return await runAnalysis();
+  } finally {
+    await settleSink();
+  }
+
+  async function runAnalysis(): Promise<void> {
   emit({ type: "phase", label: "画像を受信しました" });
   emit({ type: "phase", label: "文書の向きを確認しています…" });
 
@@ -313,12 +334,6 @@ export async function streamLiveAnalysis(
 
   const final = await stream.finalMessage();
   addUsage(usage, final.usage);
-  // ここから下は throw しうる。フォールバック先の画面で「原価$0」と誤表示しないよう、
-  // 消費済みトークンと推定原価をこの時点で受け皿に確定させておく。
-  if (sink) {
-    const { rates: sinkRates } = await getModelRates(model, llm.route);
-    sink.costUsd = estimateCostUsd(usage, sinkRates);
-  }
 
   if (final.stop_reason === "refusal") {
     throw new Error("解析リクエストが拒否されました");
@@ -395,14 +410,15 @@ export async function streamLiveAnalysis(
   emit({ type: "phase", label: "紙に書かれていた内容を 1件目のデータとして登録しました" });
   // 推定原価: トークン実測×公表単価の保守的上限(課金の正はダッシュボード)。
   // getModelRates は絶対に throw しない(失敗時は定数$5/$25にフォールバック)
-  const { rates, source } = await getModelRates(model, llm.route);
+  const { rates, source } = await getModelRates(model, route);
   emit({
     type: "done",
     spec,
     mode: "live",
     usage,
-    llmRoute: llm.route,
+    llmRoute: route,
     costUsd: estimateCostUsd(usage, rates),
     pricingSource: source,
   });
+  }
 }
