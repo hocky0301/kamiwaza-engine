@@ -7,7 +7,9 @@
 内容が1件目のデータとして登録されます。設定画面はありません。
 
 AI HACKATHON 2026 TOKYO 提出作品(**Team OO**・ソロ参加)。
-解説記事: Zenn(提出記事) / デモ動画: YouTube(限定公開・提出フォーム記載)
+
+- 解説記事(Zenn): https://zenn.dev/hocky3/articles/2b3b638a8d6885
+- デモ動画(YouTube): https://youtu.be/LkqsL06g0Ts
 
 設計判断の理由は [ARCHITECTURE.md](ARCHITECTURE.md)、セキュリティ設計(注入対策の実測含む)は [SECURITY.md](SECURITY.md)、残っている限界・未実装は
 [KNOWN_ISSUES.md](KNOWN_ISSUES.md) に先に書き出してあります。コードリーディングの時間が
