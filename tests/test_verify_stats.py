@@ -94,6 +94,64 @@ class TestClopperPearson:
         assert (large_hi - large_lo) < (small_hi - small_lo)
 
 
+class TestLargeSampleSizes:
+    """検証対象の n は 50 だけではない(値レベル 1,518・通算 2,225)。
+
+    旧実装は math.comb の多倍長整数を float と掛けていたため n>=1030 で
+    OverflowError になっていた。影響範囲を正確に書く——点推定(99.87%・
+    0/2,225)は単純な除算なのでこの不具合の影響を受けない。壊れていたのは
+    Clopper-Pearson の**区間計算**で、この n 帯で呼ぶたびに例外になっていた。
+    その区間はもともと公表していない(KNOWN_ISSUES)。それでも直すのは、
+    検証スクリプトが主張の n を扱えないなら「一次ログから再計算して検証する」
+    という前提そのものが成立しないから。
+    """
+
+    @staticmethod
+    def _naive_tail_ge(n: int, k: int, p: float) -> float:
+        """旧実装(math.comb 直接)。n が小さい範囲でのみ動く参照実装。"""
+        return sum(math.comb(n, i) * p**i * (1 - p) ** (n - i) for i in range(k, n + 1))
+
+    @staticmethod
+    def _naive_tail_le(n: int, k: int, p: float) -> float:
+        return sum(math.comb(n, i) * p**i * (1 - p) ** (n - i) for i in range(0, k + 1))
+
+    def test_matches_naive_where_both_run(self) -> None:
+        """両方動く範囲では旧実装と一致する(書き換えで値が動いていないことの固定)。"""
+        for n, k, p in ((50, 48, 0.9), (50, 10, 0.2), (200, 180, 0.85), (1029, 1000, 0.97)):
+            assert binom_tail_ge(n, k, p) == pytest.approx(self._naive_tail_ge(n, k, p), rel=1e-9)
+            assert binom_tail_le(n, k, p) == pytest.approx(self._naive_tail_le(n, k, p), rel=1e-9)
+
+    def test_naive_overflows_where_this_one_does_not(self) -> None:
+        """回帰の本体: 旧実装が落ちる n=1030 で、現実装は落ちない。
+
+        破断は下側の裾 (P(X <= k)) で起きる。中央の二項係数 C(1030, 515) が
+        float の上限を超え、p の値に関係なく `comb * p**i` の時点で落ちるため。
+        clopper_pearson では **上限を求める分岐** がこの裾を使う。
+        k == n(通算 2,225 の全数成功)はその分岐を通らないので露見しなかった。
+        """
+        with pytest.raises(OverflowError):
+            self._naive_tail_le(1030, 1028, 0.99)
+        assert 0.0 <= binom_tail_le(1030, 1028, 0.99) <= 1.0
+
+    def test_value_level_sample_size(self) -> None:
+        """値レベル n=1,518。区間は公表しないが、評価はできなければならない。"""
+        lo, hi = clopper_pearson(1516, 1518)
+        assert lo <= 1516 / 1518 <= hi
+        assert 0.0 < lo < hi < 1.0
+
+    def test_cumulative_sample_size(self) -> None:
+        """通算 n=2,225・全数成功。k=n なので上限は 1 に張り付く。"""
+        lo, hi = clopper_pearson(2225, 2225)
+        assert hi == 1.0
+        assert 0.0 < lo < 1.0
+
+    def test_complementary_at_large_n(self) -> None:
+        """大きい n でも P(X >= k) + P(X <= k-1) == 1 の恒等式が保たれる。"""
+        for k in (1, 500, 1517, 1518):
+            total = binom_tail_ge(1518, k, 0.998) + binom_tail_le(1518, k - 1, 0.998)
+            assert total == pytest.approx(1.0)
+
+
 class TestApprox:
     """許容誤差の判定。ここが緩むと検証全体が素通しになる。"""
 
