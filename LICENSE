@@ -1,75 +1,82 @@
-# PolyForm Noncommercial License 1.0.0
+Source-Available License (Permission Required)
+Version 1.0, 2026-09-19
 
-Copyright (c) 2026 Kamil Ijuin
+Copyright (c) 2026 Kamil Ijuin. All rights reserved.
 
-<https://polyformproject.org/licenses/noncommercial/1.0.0>
+This repository is published so that people can read it. It is not open
+source, and it is not free to use.
 
-## Acceptance
+1. What you may do without asking
+   - View this repository on GitHub.
+   - Download or clone it, and read, build and run it on your own machine
+     for personal, non-commercial evaluation and study.
 
-In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
+2. What you may not do without my prior written permission
+   - Use the code, documents, images or data in any product, service,
+     business, research, class or publication.
+   - Copy, modify, translate, or create derivative works from any part of it.
+   - Redistribute, publish, host, mirror, sublicense or sell any part of it,
+     in original or modified form.
+   - Use it for any commercial purpose, including internal use inside a
+     company.
+   - Use it as training, fine-tuning or evaluation data for a machine
+     learning model.
 
-## Copyright License
+3. How to ask
+   Open an issue in this repository, or use the contact on my GitHub profile
+   (https://github.com/hocky0301). Permission is valid only when I give it in
+   writing, and only for what it names.
 
-The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose. However, you may only distribute the software according to Distribution License and make changes or new works based on the software according to Changes and New Works License.
+4. Third-party material
+   Third-party code, data and documents included in or used by this
+   repository keep their own licenses, as listed in the README and, where
+   present, in NOTICE or THIRD_PARTY files. This license does not change
+   them.
 
-## Distribution License
+5. No warranty
+   The work is provided "as is", without warranty of any kind. I am not
+   liable for any damage arising from its use.
 
-The licensor grants you an additional copyright license to distribute copies of the software. Your license to distribute covers distributing the software with changes and new works permitted by Changes and New Works License.
+6. Termination
+   Any use outside this license ends your permission under it immediately.
 
-## Notices
+----------------------------------------------------------------------
 
-You must ensure that anyone who gets a copy of any part of the software from you also gets a copy of these terms or the URL for them above, as well as copies of any plain-text lines beginning with Required Notice: that the licensor provided with the software. For example:
+ソース公開ライセンス（利用は許可制）
+第 1.0 版 2026-09-19
 
-Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
+Copyright (c) 2026 伊集院カミル（Kamil Ijuin）. All rights reserved.
 
-## Changes and New Works License
+このリポジトリは、読んでもらうために公開しています。オープンソースでは
+なく、自由に使えるものでもありません。
 
-The licensor grants you an additional copyright license to make changes and new works based on the software for any permitted purpose.
+1. 許可なくできること
+   - GitHub 上で閲覧する。
+   - ダウンロード・クローンして、自分の機械で読む・ビルドする・動かす
+     （個人的な評価と学習のためで、商用でない場合に限る）。
 
-## Patent License
+2. 私の事前の書面による許可が要ること
+   - コード・文書・画像・データを、製品・サービス・業務・研究・授業・
+     出版物で使うこと。
+   - 複製・改変・翻訳・派生物の作成。
+   - 再配布・公開・ホスティング・ミラー・再許諾・販売
+     （原型のままでも改変後でも）。
+   - 商用目的での利用（社内利用を含む）。
+   - 機械学習モデルの学習・微調整・評価データとして使うこと。
 
-The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
+3. 許可の求め方
+   このリポジトリの Issue か、GitHub プロフィール
+   （https://github.com/hocky0301）の連絡先から。許可は私が書面で与えた
+   ものだけが有効で、そこに書いた範囲に限ります。
 
-## Noncommercial Purposes
+4. 第三者の素材
+   このリポジトリに含まれる、または使っている第三者のコード・データ・
+   文書は、それぞれのライセンスに従います（README や NOTICE・THIRD_PARTY
+   系のファイルに一覧）。このライセンスはそれらを変えません。
 
-Any noncommercial purpose is a permitted purpose.
+5. 無保証
+   現状のまま提供し、いかなる保証もしません。利用によって生じた損害に
+   ついて責任を負いません。
 
-## Personal Uses
-
-Personal use for research, experiment, and testing for the benefit of public knowledge, personal study, private entertainment, hobby projects, amateur pursuits, or religious observance, without any anticipated commercial application, is use for a permitted purpose.
-
-## Noncommercial Organizations
-
-Use by any charitable organization, educational institution, public research organization, public safety or health organization, environmental protection organization, or government institution is use for a permitted purpose regardless of the source of funding or obligations resulting from the funding.
-
-## Fair Use
-
-You may have "fair use" rights for the software under the law. These terms do not limit them.
-
-## No Other Rights
-
-These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else. These terms do not imply any other licenses.
-
-## Patent Defense
-
-If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
-
-## Violations
-
-The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 32 days of receiving notice. Otherwise, all your licenses end immediately.
-
-## No Liability
-
-As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.
-
-## Definitions
-
-The licensor is the individual or entity offering these terms, and the software is the software the licensor makes available under these terms.
-
-You refers to the individual or entity agreeing to these terms.
-
-Your company is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization. Control means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise. Control can be direct or indirect.
-
-Your licenses are all the licenses granted to you for the software under these terms.
-
-Use means anything you do with the software requiring one of your licenses.
+6. 終了
+   このライセンスの範囲外の利用があった時点で、許可は直ちに終わります。
